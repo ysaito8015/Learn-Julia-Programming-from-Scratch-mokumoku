@@ -157,3 +157,195 @@ x << y     logical/arithmetic shift left
 >        greater than
 >=, ≥    greater than or equal to
 
+### 2.1.6 更新演算子
+- `+=, -=, *=, /=, \=, ÷=, %=` など
+
+```
+julia> x = 1;
+
+julia> x += 1
+2
+```
+
+### 複素数
+- `im` が虚数単位
+
+
+```
+julia> 1 + 2im
+1 + 2im
+
+julia> (1 + 2im) * (2 - 3im)
+8 + 1im
+
+julia> real(1 + 2im)
+1
+
+julia> imag(1 + 2im)
+2
+
+julia> conj(1 + 2im)
+1 - 2im
+
+julia> abs(1 + 2im)
+2.23606797749979
+```
+
+
+### 2.1.8 文字列
+- `String` 型
+    - Unicode 文字列
+    - UTF-8
+- `string[idx]` で１始まり
+    - `string[x以上:y以下]` という閉区間指定
+
+```
+julia> s = "Hello Julia"
+"Hello Julia"
+
+julia> s[1]
+'H': ASCII/Unicode U+0048 (category Lu: Letter, uppercase)
+
+julia> typeof(s[1])
+Char
+
+julia> s[end]
+'a': ASCII/Unicode U+0061 (category Ll: Letter, lowercase)
+
+julia> s[1:5]
+"Hello"
+```
+
+#### 文字列の連結など
+
+```
+julia> h = "Hello";
+
+julia> j = "Julia";
+
+julia> string(h, " ", j)
+"Hello Julia"
+
+julia> h * " " * j
+"Hello Julia"
+
+julia> "$h #j"
+"Hello #j"
+
+julia> "$h $j"
+"Hello Julia"
+```
+
+#### クォート
+- ダブルクォートは `String` 型, 式展開可能
+- バッククォートは `Cmd` 型, 式展開可能
+- シングルクォートはエラー
+- 生の文字列リテラルはどう出すのか
+
+```
+julia> "1 + 2 = $(1 + 2)"
+"1 + 2 = 3"
+
+julia> `1 + 2 = $(1 + 2)`
+`1 + 2 = 3`
+
+julia> '1 + 2 = $(1 + 2)'
+ERROR: syntax: character literal contains multiple characters
+Stacktrace:
+ [1] top-level scope
+   @ none:1
+
+julia> typeof(`1 + 2 = $(1 + 2)`)
+Cmd
+
+julia> typeof("1 + 2 = $(1 + 2)")
+String
+
+julia> typeof('1 + 2 = $(1 + 2)')
+ERROR: syntax: character literal contains multiple characters
+Stacktrace:
+ [1] top-level scope
+   @ none:1
+
+```
+
+### 2.1.9 Unicode 文字列
+- マルチバイト文字も操作できる
+    - UTF-8 のような, 可変多バイト文字の扱いに注意
+    - `nextiind()` 関数で次の文字のインデックスを取得できる
+
+```
+julia> s = "こんにちは, Julia";
+
+julia> s[1]
+'こ': Unicode U+3053 (category Lo: Letter, other)
+
+julia> s[2]
+ERROR: StringIndexError: invalid index [2], valid nearby indices [1]=>'こ', [4]=>'ん'
+Stacktrace:
+ [1] string_index_err(s::String, i::Int32)
+   @ Base ./strings/string.jl:12
+ [2] getindex_continued(s::String, i::Int32, u::UInt32)
+   @ Base ./strings/string.jl:233
+ [3] getindex(s::String, i::Int32)
+   @ Base ./strings/string.jl:226
+ [4] top-level scope
+   @ REPL[35]:1
+
+julia> s[4]
+'ん': Unicode U+3093 (category Lo: Letter, other)
+
+julia> nextind(s, 1)
+4
+
+julia> nextind(s, 4)
+7
+
+```
+
+#### 文字列を文字の配列に変換する
+
+```
+julia> chars = Vector{Char}(s)
+12-element Vector{Char}:
+ 'こ': Unicode U+3053 (category Lo: Letter, other)
+ 'ん': Unicode U+3093 (category Lo: Letter, other)
+ 'に': Unicode U+306B (category Lo: Letter, other)
+ 'ち': Unicode U+3061 (category Lo: Letter, other)
+ 'は': Unicode U+306F (category Lo: Letter, other)
+ ',': ASCII/Unicode U+002C (category Po: Punctuation, other)
+ ' ': ASCII/Unicode U+0020 (category Zs: Separator, space)
+ 'J': ASCII/Unicode U+004A (category Lu: Letter, uppercase)
+ 'u': ASCII/Unicode U+0075 (category Ll: Letter, lowercase)
+ 'l': ASCII/Unicode U+006C (category Ll: Letter, lowercase)
+ 'i': ASCII/Unicode U+0069 (category Ll: Letter, lowercase)
+ 'a': ASCII/Unicode U+0061 (category Ll: Letter, lowercase)
+
+```
+
+#### Characters
+- `Char` 型は
+    - 32 bit 長のプリミティブ型
+    - `'x'` など, いち文字
+- Unicode コードポイントへ変換可能
+- Go の rune 型に近いイメージ？
+
+```
+# 'x' の Unicode コードポイント
+julia> c = 'x'
+'x': ASCII/Unicode U+0078 (category Ll: Letter, lowercase)
+
+julia> typeof(c)
+Char
+
+# int 型への変換
+julia> c = Int('x')
+120
+
+julia> typeof(c)
+Int64
+
+julia> Char(120)
+'x': ASCII/Unicode U+0078 (category Ll: Letter, lowercase)
+```
+
