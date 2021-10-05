@@ -129,33 +129,34 @@ ERROR: cannot assign a value to variable Base.sqrt from module Main
 ```
 
 ### 2.1.5 基本的な演算子
-Expression      Name                    Description
-+x         unary plus     the identity operation
--x         unary minus    maps values to their additive inverses
-x + y      binary plus    performs addition
-x - y      binary minus   performs subtraction
-x * y      times          performs multiplication
-x / y      divide         performs division
-x ÷ y     integer divide x / y, truncated to an integer
-x \ y      inverse divide equivalent to y / x
-x ^ y      power          raises x to the yth power
-x % y      remainder      equivalent to rem(x,y)
-!x         negation
-x && y     short-circuiting and
-x || y     short-circuiting or
-~x         bitwise not
-x & y      bitwise and
-x | y      bitwise or
-x ⊻ y      bitwise xor (exclusive or)
-x >>> y    logical shift right
-x >> y     arithmetic shift right
-x << y     logical/arithmetic shift left
-==       equality
-!=, ≠    inequality
-<        less than
-<=, ≤    less than or equal to
->        greater than
->=, ≥    greater than or equal to
+|Expression|      Name                     | Description                            |
+|----------|-------------------------------|----------------------------------------|
+|+x        | unary plus                    | the identity operation                 |
+|-x        | unary minus                   | maps values to their additive inverses |
+|x + y     | binary plus                   | performs addition                      |
+|x - y     | binary minus                  | performs subtraction                   |
+|x * y     | times                         | performs multiplication                |
+|x / y     | divide                        | performs division                      |
+|x ÷ y    | integer divide                | x / y, truncated to an integer         |
+|x \ y     | inverse divide                | equivalent to y / x                    |
+|x ^ y     | power                         | raises x to the yth power              |
+|x % y     | remainder                     | equivalent to rem(x,y)                 |
+|!x        | negation                      |                                        |
+|x && y    | short-circuiting and          |                                        |
+|x || y    | short-circuiting or           |                                        |
+|~x        | bitwise not                   |                                        |
+|x & y     | bitwise and                   |                                        |
+|x | y     | bitwise or                    |                                        |
+|x ⊻ y     | bitwise xor (exclusive or)    |                                        |
+|x >>> y   | logical shift right           |                                        |
+|x >> y    | arithmetic shift right        |                                        |
+|x << y    | logical/arithmetic shift left |                                        |
+|==        | equality                      |                                        |
+|!=, ≠    | inequality                    |                                        |
+|<         | less than                     |                                        |
+|<=, ≤    | less than or equal to         |                                        |
+|>         | greater than                  |                                        |
+|>=, ≥    | greater than or equal to      |                                        |
 
 ### 2.1.6 更新演算子
 - `+=, -=, *=, /=, \=, ÷=, %=` など
@@ -273,6 +274,8 @@ Stacktrace:
 - マルチバイト文字も操作できる
     - UTF-8 のような, 可変多バイト文字の扱いに注意
     - `nextiind()` 関数で次の文字のインデックスを取得できる
+- 文字列などのインデックス指定に `end` キーワードが使える
+    - `end-1` は, 1 byte 前を参照
 
 ```
 julia> s = "こんにちは, Julia";
@@ -300,6 +303,25 @@ julia> nextind(s, 1)
 
 julia> nextind(s, 4)
 7
+
+# docs.julialang.org/en/v1/manual/strings
+julia> str[1:4]
+"こん"
+
+julia> str[end]
+'a': ASCII/Unicode U+0061 (category Ll: Letter, lowercase)
+
+julia> str[end-1]
+'i': ASCII/Unicode U+0069 (category Ll: Letter, lowercase)
+
+julia> str[end-2]
+'l': ASCII/Unicode U+006C (category Ll: Letter, lowercase)
+
+julia> str[end-3]
+'u': ASCII/Unicode U+0075 (category Ll: Letter, lowercase)
+
+julia> str[end-4]
+'J': ASCII/Unicode U+004A (category Lu: Letter, uppercase)
 
 ```
 
@@ -349,3 +371,49 @@ julia> Char(120)
 'x': ASCII/Unicode U+0078 (category Ll: Letter, lowercase)
 ```
 
+### 2.1.10 文字列の関数
+- 文字列を捜査する標準の関数
+
+
+```
+# 文字列の長さ
+julia> length("Julia")
+5
+
+# 文字列の繰り返し
+julia> repeat("Julia", 2)
+"JuliaJulia"
+
+# 文字列の置き換え
+julia> replace("Python is the best!", "Python" => "Julia")
+"Julia is the best!"
+
+# 指定の文字で, 文字列を区切る
+# CSV など？
+julia> split("Julia-Lang", "-")
+2-element Vector{SubString{String}}:
+ "Julia"
+ "Lang"
+
+ # 指定の文字で, 開始されているか
+julia> startswith("JuliaLang", "Julia")
+true
+
+# 指定の文字で, 終わっているか
+julia> endswith("JuliaLang", "Lang")
+true
+
+## 指定の文字で, 文字列を連結する
+julia> join(["Julia", "Lang"], "-")
+"Julia-Lang"
+
+# 文字列の検索
+# findfirst は見つかった場合, 文字インデックスを返す
+# 見つからなかった場合は, nothing を返す
+julia> findfirst("Julia", "JuliaLang")
+1:5
+
+```
+
+
+### 2.1.11 正規表現
