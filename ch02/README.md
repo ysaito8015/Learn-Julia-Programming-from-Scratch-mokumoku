@@ -417,3 +417,579 @@ julia> findfirst("Julia", "JuliaLang")
 
 
 ### 2.1.11 正規表現
+- Julia では, PCRE (Perl Compatible Regular Expressions) という正規表現ライブラリを使える
+- 文字列の前に `r` をつけることで, 正規表現を示す
+    - `r"正規表現"`
+- `math(正規表現型オブジェクト, "文字列")` 関数で, マッチさせる
+- マッチした結果は, `RegexMatch` 型のオブジェクトが返り, 情報を持つ
+
+
+```
+julia> re = r"^\s*(?:#|$)"
+r"^\s*(?:#|$)"
+
+julia> typeof(re)
+Regex
+
+julia> occursin(r"^\s*(?:#|$)", "not a comment")
+false
+
+julia> occursin(r"^\s*(?:#|$)", "# a comment")
+true
+
+julia> regex = r"J.*g"
+r"J.*g"
+
+julia> typeof(regex)
+Regex
+
+julia> m = match(regex, "JuliaLang is the best.")
+RegexMatch("JuliaLang")
+
+julia> typeof(m)
+RegexMatch
+
+julia> n = match(regex, "JuliaLan is the best.")
+
+julia> typeof(n)
+Nothing
+
+julia> m.match
+"JuliaLang"
+
+julia> m.offset
+1
+
+```
+
+
+## 2.2 制御構文
+### 2.2.1 条件評価
+- `if, elseif, else, end` を用いて条件分岐させる
+
+
+```
+julia> x = 3; y = 2;
+
+julia> if x < y
+           println("x is less than y")
+       elseif x > y
+           println("x is greater than y")
+       else
+           println("x is equal to y")
+       end
+x is greater than y
+
+```
+
+- 三項演算子
+    - 演算子の前にスペース必要
+
+
+```
+julia> x = 100;
+
+julia> x > 100? true : false
+ERROR: syntax: space required before "?" operator
+Stacktrace:
+ [1] top-level scope
+   @ none:1
+
+julia> x > 100 ? true : false
+false
+```
+
+### 2.2.2 短絡評価
+- `&&` や, `||` という演算子を用いた条件評価
+    - if 文の代わりに使える
+- `a && b` 
+    - a ならば b という条件式
+    - a と b どちらも `true` の場合のみ `true` を返す
+    - a が `false` だった場合, b は評価されない
+- `a || b`
+    - a と b がどちらも `false` の場合のみ `false` を返す
+
+
+```
+# 整数 n が 0 以上のとき, エラーを返す
+# a の式 n >= 0 が true のときのみ, b の式評価へ進む
+julia> n = 1; n >= 0 && error("n must be negative.")
+ERROR: n must be negative.
+Stacktrace:
+ [1] error(s::String)
+   @ Base ./error.jl:33
+ [2] top-level scope
+   @ REPL[45]:1
+
+# 整数 n が 0 より小さいときにエラーを返す
+# a の式, n >= 0 が false のときのみ, b の式評価へ進む
+julia> n = 1; n >= 0 && error("n must be non-negative.")
+ERROR: n must be non-negative.
+Stacktrace:
+ [1] error(s::String)
+   @ Base ./error.jl:33
+ [2] top-level scope
+   @ REPL[47]:1
+```
+
+#### && の評価
+
+```
+julia> true && true
+true
+
+julia> true && false
+false
+
+julia> false && true
+false
+
+julia> false && false
+false
+
+# 式評価
+julia> returnTrue(x) = (println(x);  true)
+returnTrue (generic function with 1 method)
+
+julia> returnFalse(x) = (println(x); false)
+returnFalse (generic function with 1 method)
+
+julia> returnTrue(1) && returnTrue(2)
+1
+2
+true
+
+julia> returnTrue(1) && returnFalse(2)
+1
+2
+false
+
+# 最初の評価が false であれば, 最初の評価で止まる
+julia> returnFalse(1) && returnTrue(2)
+1
+false
+
+julia> returnFalse(1) && returnFalse(2)
+1
+false
+
+```
+
+#### || の評価
+
+```
+# a, b いずれかが true であれば true
+julia> true || true
+true
+
+julia> true || false
+true
+
+julia> false || true
+true
+
+julia> false || false
+false
+
+# a が true であれば, 最初の式の評価で終わる
+julia> returnTrue(1) || returnTrue(2)
+1
+true
+
+julia> returnTrue(1) || returnFalse(2)
+1
+true
+
+# a が false であれば b の式評価へ進む
+julia> returnFalse(1) || returnTrue(2)
+1
+2
+true
+
+julia> returnFalse(1) || returnFalse(2)
+1
+2
+false
+```
+
+
+#### 再帰的な階乗計算, Recursive Factorial Routine
+
+```
+julia> function factorial(n::Int)
+           # n が 0 以上でないときのみ, 右の式評価へ進む
+           n >= 0 || error("n must be non-negative.")
+           # n が 0 であるときのみ, 右の式評価へ進む
+           n == 0 && return 1
+           n * factorial(n-1)
+           end
+factorial (generic function with 1 method)
+
+julia> factorial(5)
+120
+
+julia> factorial(0)
+1
+
+julia> factorial(-1)
+ERROR: n must be non-negative.
+Stacktrace:
+ [1] error(s::String)
+   @ Base ./error.jl:33
+ [2] factorial(n::Int64)
+   @ Main ./REPL[82]:2
+ [3] top-level scope
+   @ REPL[85]:1
+
+```
+
+#### 短絡評価 を使わない場合の Boolean 演算子
+- boolean のビット演算で行われる
+- `|`, `&` は両辺が必ず評価される
+
+
+```
+# & 演算子 -> bitwiase and
+julia> returnTrue(1) & returnTrue(2)
+1
+2
+true
+
+julia> returnTrue(1) & returnFalse(2)
+1
+2
+false
+
+julia> returnFalse(1) & returnTrue(2)
+1
+2
+false
+
+julia> returnFalse(1) & returnFalse(2)
+1
+2
+false
+
+# | 演算子 -> bitwise or
+julia> returnTrue(1) | returnTrue(2)
+1
+2
+true
+
+julia> returnTrue(1) | returnFalse(2)
+1
+2
+true
+
+julia> returnFalse(1) | returnTrue(2)
+1
+2
+true
+
+julia> returnFalse(1) | returnFalse(2)
+1
+2
+false
+
+```
+
+
+#### non-boolean 値と, 短絡評価
+- boolean 値以外を最後の評価式以外に置くとエラーになる
+
+
+```
+julia> false || 1 && false
+ERROR: TypeError: non-boolean (Int64) used in boolean context
+Stacktrace:
+ [1] top-level scope
+   @ REPL[101]:1
+
+julia> false || false && 1
+false
+```
+
+- 最後の式評価では, いかなる式評価でも置くことができる
+
+
+```
+julia> true && (x = (1, 2, 3))
+(1, 2, 3)
+
+julia> false && (x = (1, 2, 3))
+false
+
+```
+
+
+### 2.2.3 ループ, Rpeated Evaluation: Loops
+
+#### while 文
+- `while ... end` のブロック区内の処理を繰り返し実行できる
+
+
+```
+# グローバル変数として宣言
+julia> i = 1
+1
+
+julia> while i <= 5
+           print(i)
+           # グローバル変数の変更
+           # global 修飾子をつける
+           global i += 1
+       end
+12345
+```
+
+
+#### for 文
+
+```
+# 1:5 は Range 型のオブジェクト
+# 1 2 3 4 5 を順番に渡す
+julia> typeof(1:5)
+UnitRange{Int64}
+
+julia> for i = 1:5
+           print(i)
+       end
+12345
+
+# 配列を使った for 文
+julia> for i in [1,4,0]
+           print(i)
+       end
+140
+```
+
+
+#### break, continue
+
+
+```
+julia> for j = 1:1000
+           println(j)
+           # j が 5 以上ならルーブ終了
+           if j >= 5
+               break
+           end
+       end
+1
+2
+3
+4
+5
+
+# continue
+julia> for i = 1:10
+           # i を 3 でわってあまりが 0 以外はスキップする
+           if i % 3 != 0
+               continue
+           end
+           println(i)
+       end
+3
+6
+9
+```
+
+
+#### ネストされたループを簡略化できる
+
+
+```
+julia> for i = 1:2
+           for j = 3:4
+               println((i, j))
+           end
+       end
+(1, 3)
+(1, 4)
+(2, 3)
+(2, 4)
+
+julia> for i = 1:2, j = 3:4
+           println((i, j))
+       end
+(1, 3)
+(1, 4)
+(2, 3)
+(2, 4)
+
+```
+
+### 2.2.4 rty/catch/finally
+- 例外処理
+    - テストしたいコードを `tyr` ブロックに書く
+    - 例外が発生したときにに実行される処理を `catch` ブロックに書く
+    - `catch` の処理が終わった後で `finally` ブロックが実行される
+
+
+```
+julia> str = "Julia"
+"Julia"
+
+julia> try
+           i = parse(Int, str)
+           println(i)
+       catch
+           # ...
+       end
+
+julia> println(parse(Int, str))
+ERROR: ArgumentError: invalid base 10 digit 'J' in "Julia"
+Stacktrace:
+ [1] tryparse_internal(#unused#::Type{Int64}, s::String, startpos::Int64, endpos::Int64, base_::Int64, raise::Bool)
+   @ Base ./parse.jl:137
+ [2] parse(::Type{Int64}, s::String; base::Nothing)
+   @ Base ./parse.jl:241
+ [3] parse(::Type{Int64}, s::String)
+   @ Base ./parse.jl:241
+ [4] top-level scope
+   @ REPL[123]:1
+
+```
+
+
+#### ファイルの入出力
+
+```
+julia> f = open("nofile")
+ERROR: SystemError: opening file "nofile": No such file or directory
+Stacktrace:
+ [1] systemerror(p::String, errno::Int32; extrainfo::Nothing)
+   @ Base ./error.jl:168
+ [2] #systemerror#62
+   @ ./error.jl:167 [inlined]
+ [3] systemerror
+   @ ./error.jl:167 [inlined]
+ [4] open(fname::String; lock::Bool, read::Nothing, write::Nothing, create::Nothing, truncate::Nothing, append::Nothing)
+   @ Base ./iostream.jl:293
+ [5] open(fname::String)
+   @ Base ./iostream.jl:282
+ [6] top-level scope
+   @ REPL[124]:1
+
+julia> try
+           operate(f)
+       finally
+           close(f)
+       end
+ERROR: MethodError: no method matching close(::typeof(f))
+Closest candidates are:
+  close(::Union{Base.AsyncCondition, Timer}) at asyncevent.jl:136
+  close(::Union{FileWatching.FileMonitor, FileWatching.FolderMonitor, FileWatching.PollingFileWatcher}) at /buildworker/worker/package_linux64/build/usr/share/julia/s
+tdlib/v1.6/FileWatching/src/FileWatching.jl:304
+  close(::Base.GenericIOBuffer{T}) where T at iobuffer.jl:337
+  ...
+Stacktrace:
+ [1] top-level scope
+   @ REPL[125]:4
+
+caused by: UndefVarError: operate not defined
+Stacktrace:
+ [1] top-level scope
+   @ REPL[125]:2
+
+```
+
+#### sqrt 関数を例外で場合分けする
+
+
+```
+julia> sqrt_second(x) = try
+                  # x の２番めの要素の平方根を取る
+                  sqrt(x[2])
+              catch y
+                  # y が DomainError であった場合
+                  # DomainError, 適切なドメインの外の要素を引数にした場合
+                  if isa(y, DomainError)
+                      # 複素数として平方根を取る
+                      sqrt(complex(x[2], 0))
+                  # y が BoundsError であった場合
+                  # BoundsError, 配列の長さ以外の要素にアクセスした場合
+                  elseif isa(y, BoundsError)
+                      sqrt(x)
+                  end
+              end
+sqrt_second (generic function with 1 method)
+
+julia> sqrt_second([1 4])
+# 4 の平方根
+2.0
+
+julia> sqrt_second([1 -4])
+# -4 の平方根
+0.0 + 2.0im
+
+julia> sqrt_second(9)
+# 9 の平方根
+3.0
+
+julia> sqrt_second(-9)
+ERROR: DomainError with -9.0:
+sqrt will only return a complex result if called with a complex argument. Try sqrt(Complex(x)).
+Stacktrace:
+ [1] throw_complex_domainerror(f::Symbol, x::Float64)
+   @ Base.Math ./math.jl:33
+ [2] sqrt
+   @ ./math.jl:582 [inlined]
+ [3] sqrt
+   @ ./math.jl:608 [inlined]
+ [4] sqrt_second(x::Int64)
+   @ Main ./REPL[137]:7
+ [5] top-level scope
+   @ REPL[141]:1
+
+caused by: BoundsError
+Stacktrace:
+ [1] getindex
+   @ ./number.jl:96 [inlined]
+ [2] sqrt_second(x::Int64)
+   @ Main ./REPL[137]:2
+ [3] top-level scope
+   @ REPL[141]:1
+
+```
+
+
+#### 独自の例外を定義する
+- 構造体で宣言する
+
+```
+julia> struct MyCustomException <: Exception end
+
+julia> struct MyUndefVarError <: Exception
+           var::Symbol
+       end
+
+julia> Base.showerror(io::IO, e::MyUndefVarError) = println(io, e.var, " not defined")
+
+```
+
+#### 明示的なエラー文を加える
+- 組み込みの例外に説明を加える
+- `throw(組み込みの例外(x, "加える説明文"))` 
+
+
+```
+julia> f(x) = x>=0 ? exp(-x) : throw(DomainError(x, "argument must be non-negative"))
+f (generic function with 1 method)
+
+julia> f(1)
+0.36787944117144233
+
+julia> f(-1)
+ERROR: DomainError with -1:
+argument must be non-negative
+Stacktrace:
+ [1] f(x::Int64)
+   @ Main ./REPL[132]:1
+ [2] top-level scope
+   @ REPL[134]:1
+
+```
+
+
+## 2.3 関数
