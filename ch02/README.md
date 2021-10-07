@@ -143,10 +143,10 @@ ERROR: cannot assign a value to variable Base.sqrt from module Main
 |x % y     | remainder                     | equivalent to rem(x,y)                 |
 |!x        | negation                      |                                        |
 |x && y    | short-circuiting and          |                                        |
-|x || y    | short-circuiting or           |                                        |
+|x \|\| y    | short-circuiting or           |                                        |
 |~x        | bitwise not                   |                                        |
 |x & y     | bitwise and                   |                                        |
-|x | y     | bitwise or                    |                                        |
+|x \| y     | bitwise or                    |                                        |
 |x ⊻ y     | bitwise xor (exclusive or)    |                                        |
 |x >>> y   | logical shift right           |                                        |
 |x >> y    | arithmetic shift right        |                                        |
@@ -993,3 +993,297 @@ Stacktrace:
 
 
 ## 2.3 関数
+- 関数とは, 引数を入力として受け取って, 何らかの結果を返すオブジェクト
+- a function is an object that maps a tuple of argument values to a return value
+- 最後に評価された値が自動的に戻り値となる
+
+
+```
+# function end で宣言
+julia> function add(x, y)
+           return x + y
+       end
+add (generic function with 1 method)
+
+# 直接宣言 assignment form
+julia> f(x, y) = x + y
+f (generic function with 2 methods)
+
+julia> add(2,3)
+5
+
+julia> f(2,3)
+5
+
+```
+
+#### 引数や戻り値に型を指定
+- 型はすべての引数に付与してもよいし, 一部の引数だけでも良い
+
+
+```
+julia> add_typed(x::Int, y::Int) = x + y;
+
+julia> typeof(add_typed(3, 4))
+Int64
+
+julia> add_typed(x::Int8, y::Int8) = x + y;
+
+julia> typeof(add_typed(3, 4))
+Int64
+
+julia> add_typed(x::Int8, y::Int8)::Int8 = x + y;
+
+julia> typeof(add_typed(3, 4))
+Int64
+
+julia> function add_typed(x::Int8, y::Int8)::Int8
+                  return x * y
+              end;
+
+julia> typeof(g(1,2))
+Int8
+
+```
+
+#### 関数の戻り値を複数にする
+
+```
+julia> function sum_diff(x, y)
+           x+y, x*y
+       end;
+
+julia> function sum_diff(x, y)
+           x+y, x-y
+       end;
+
+julia> typeof(sum_diff(3, 4))
+Tuple{Int64, Int64}
+
+```
+
+#### Tuple 型
+- 組み込みのデータ構造
+- 複数の値をまとめた型
+    - 固定長のコンテナ
+    - immutable であり変更できない
+- `()` は空のタプル
+
+```
+julia> typeof((1, 1+1))
+Tuple{Int64, Int64}
+
+julia> typeof((1,))
+Tuple{Int64}
+
+julia> typeof((0.0, "hello", 6*7))
+Tuple{Float64, String, Int64}
+
+julia> x = (0.0, "hello", 6*7)
+(0.0, "hello", 42)
+
+julia> x[2]
+"hello"
+
+julia> typeof(())
+Tuple{}
+
+```
+
+
+#### 名前付き Tuple 型
+- Tuple の要素に名前をつけることができる
+
+
+```
+julia> x = (a=2, b=1+2)
+(a = 2, b = 3)
+
+julia> x[1]
+2
+
+julia> x.a
+2
+
+```
+
+
+### 2.3.1 可変長引数, Varargs Functions
+- `x...` のようにドットを３つつなげることで可変長であることを意味する
+    - 引数の定義の最後の要素のみに使える
+        - つまり, `bar(x..., y)` という定義はエラー
+- 複数の引数をそれぞれ可変長にすることもできない
+- 可変長引数に型注釈を与える
+    - `g(x, y::Int...)`
+
+```
+julia> function f(x...)
+           sum = 0
+           # 出力されない
+           println(length(x))
+           # 引数の長さまでの range オブジェクト
+           for i = 1:length(x)
+               # 引数の Tuple にインデックスでアクセス
+               sum += x[i]
+           end
+           sum
+       end;
+
+julia> f(3)
+# 書籍の出力では 3
+0.049787068367863944
+
+julia> f(3,4)
+7
+```
+
+
+#### 可変長引数と, Tuple
+
+```
+julia> bar(a, b, x...) = (a,b,x)
+bar (generic function with 1 method)
+
+# (1,2, (空のタプル))
+julia> bar(1,2)
+(1, 2, ())
+
+# 3番目以降の引数は全て一つのタプルにまとめられる
+julia> bar(1,2,3)
+(1, 2, (3,))
+
+julia> bar(1,2,3,4)
+(1, 2, (3, 4))
+
+julia> bar(1,2,3,4,5,7)
+(1, 2, (3, 4, 5, 7))
+
+# タプルを変数に格納
+julia> x = (3,4)
+(3, 4)
+
+# タプルを格納した変数を ... を使わずに渡す
+julia> bar(1,2,x)
+(1, 2, ((3, 4),))
+
+# 変数... で渡す
+julia> bar(1,2,x...)
+(1, 2, (3, 4))
+
+# 要素を４つ持つタプル
+julia> x = (1,2,3,4)
+(1, 2, 3, 4)
+
+julia> bar(1,2,x)
+(1, 2, ((1, 2, 3, 4),))
+
+julia> bar(x)
+ERROR: MethodError: no method matching bar(::NTuple{4, Int64})
+Closest candidates are:
+  bar(::Any, ::Any, ::Any...) at REPL[179]:1
+Stacktrace:
+ [1] top-level scope
+   @ REPL[189]:1
+
+# 関数の引数で定義した, 第１, 第２引数をタプルから取り込み, 残りの要素を 可変長引数に格納する
+julia> bar(x...)
+(1, 2, (3, 4))
+
+```
+
+
+#### iterable オブジェクト
+- いくつかの引数と可変長引数を持つ関数に, iterable オブジェクトを渡すとき 
+    - 自動的にオブジェクトの先頭の要素から関数の各引数に割り当てられる
+
+
+```
+julia> x = [3,4]
+2-element Vector{Int64}:
+ 3
+ 4
+
+julia> bar(1,2,x...)
+(1, 2, (3, 4))
+
+julia> bar(1,2,x)
+(1, 2, ([3, 4],))
+
+julia> x = [1,2,3,4]
+4-element Vector{Int64}:
+ 1
+ 2
+ 3
+ 4
+
+julia> bar(x...)
+(1, 2, (3, 4))
+
+julia> bar(x)
+ERROR: MethodError: no method matching bar(::Vector{Int64})
+Closest candidates are:
+  bar(::Any, ::Any, ::Any...) at REPL[179]:1
+Stacktrace:
+ [1] top-level scope
+   @ REPL[196]:1
+
+```
+
+
+#### 可変長引数の例 rand 関数
+- doc
+    - https://docs.julialang.org/en/v1/stdlib/Random/#Random-generation-functions
+- 書式
+    - `rand([rng=GLOBAL_RNG], [S], [dims...])`
+        - `rng`
+            - Random Number Generator
+            - 乱数生成器を指定するオプション
+            - `MersenneTwister` ライブラリを通して, `MersenneTwister` オブジェクトを乱数生成に使用する
+            - ほかの RNG 型は, `AbstractRNG` を継承することで追加できる
+                - `RandomDevide` という RNG 型
+                    - OS が提供するエントロピープール
+        - `S` が示す集合からランダムな要素を取って返す
+        - `S` は
+            - インデックス可能なオブジェクト
+            - `AbstractDict` もしくは, `AbstractSet` オブジェクト
+            - 文字列
+            - 型, デフォルトは `Float64` 型
+                - `[0, 1)`
+- `Base.GLOBAL_RNG`
+    - deprecated
+    - https://discourse.julialang.org/t/warning-base-global-rng-is-deprecated-it-has-been-moved-to-the-standard-library-package-random/19852/2
+
+```
+# rand([dims...]) の部分の可変長引数へ渡している
+julia> rand(4)
+4-element Vector{Float64}:
+ 0.8820544785627955
+ 0.5393306064191477
+ 0.5967269773734716
+ 0.14746272547042816
+
+julia> rand(4, 3)
+4×3 Matrix{Float64}:
+ 0.651322  0.476229  0.325794
+ 0.27001   0.400553  0.462608
+ 0.707405  0.463902  0.480943
+ 0.97128   0.466762  0.880856
+
+julia> rand(4, 3, 2)
+4×3×2 Array{Float64, 3}:
+[:, :, 1] =
+ 0.729712   0.968799    0.588303
+ 0.695648   0.571302    0.86166
+ 0.0757485  0.00648672  0.627555
+ 0.76275    0.0663761   0.316861
+
+[:, :, 2] =
+ 0.964524   0.383842  0.346668
+ 0.0692856  0.602752  0.275058
+ 0.684716   0.830487  0.975866
+ 0.157475   0.515344  0.374874
+
+```
+
+### 2.3.2 オプショナル引数
+- 引数にデフォルト値を設定できる
