@@ -996,7 +996,10 @@ Stacktrace:
 - 関数とは, 引数を入力として受け取って, 何らかの結果を返すオブジェクト
 - a function is an object that maps a tuple of argument values to a return value
 - 最後に評価された値が自動的に戻り値となる
-
+- pass-by-sharingと呼ばれる慣習に従ってます。
+- 引数として関数に渡されるときにはその値をコピーしません。
+- 引数は新しい変数として振る舞いますが、渡された値と同一のものが参照されます。
+- 配列のようなミュータブルな値の変更は、呼び出し元に反映されます。
 
 ```
 # function end で宣言
@@ -1119,7 +1122,6 @@ julia> x.a
 ```
 julia> function f(x...)
            sum = 0
-           # 出力されない
            println(length(x))
            # 引数の長さまでの range オブジェクト
            for i = 1:length(x)
@@ -1132,6 +1134,12 @@ julia> function f(x...)
 julia> f(3)
 # 書籍の出力では 3
 0.049787068367863944
+# 同じセッションで, 同名の f(x) を定義していた
+# julia> f(x) = x>=0 ? exp(-x) : throw(DomainError(x, "argument must be non-negative"))↲
+
+julia> f(3)
+1
+3
 
 julia> f(3,4)
 7
@@ -1249,6 +1257,8 @@ Stacktrace:
             - 文字列
             - 型, デフォルトは `Float64` 型
                 - `[0, 1)`
+- `GLOBAL_RNG`
+    - https://github.com/JuliaLang/julia/search?q=GLOBAL_RNG
 - `Base.GLOBAL_RNG`
     - deprecated
     - https://discourse.julialang.org/t/warning-base-global-rng-is-deprecated-it-has-been-moved-to-the-standard-library-package-random/19852/2
@@ -1287,3 +1297,629 @@ julia> rand(4, 3, 2)
 
 ### 2.3.2 オプショナル引数
 - 引数にデフォルト値を設定できる
+
+#### Date 関数の例
+
+```
+function Date(y::Int64, m::Int64=1, d::Int64=1)
+    err = validargs(Date, y, m, d)
+    err === nothing || throw(err)
+    return Date(UTD(totaldays(y, m, d)))
+end
+```
+
+
+```
+julia> f(x, y=1) = x + y;
+
+julia> f(3)
+4
+
+julia> f(3,4)
+7
+
+julia> using Dates
+
+julia> Date(2000, 12, 12)
+2000-12-12
+
+julia> Date(2000)
+2000-01-01
+```
+
+#### オプショナル引数の設定位置
+- 末尾の引数のみ
+
+
+```
+julia> f(x, y=1, z=1) = x + y +z;
+
+julia> f(x=3, y, z) = x + y + z;
+ERROR: syntax: optional positional arguments must occur at end around REPL[231]:1
+Stacktrace:
+ [1] top-level scope
+   @ REPL[231]:1
+```
+
+
+### 2.3.3 キーワード引数
+- `function f(;引数名::型指定=デフォルト値) end`
+    - `;` の後に書く
+- 名前を指定して呼び出せる引数
+- オプショナル引数が多いときは, キーワード引数を用いるほうが可読性が高い
+
+
+```
+function plot(x, y; style="solid", width=1, color="black")
+    ###
+end
+
+julia> plot(1.3, 5.2, color="red")
+
+# 型を指定して, オプショナル引数を設定
+function f(;x::Int=1)
+    ###
+end
+```
+
+
+### 2.3.4 匿名関数 Anonymous Functions
+- 関数名をつけずに値や, 関数の組を割り当てる
+- `x -> begin end` 構文
+
+```
+julia> square = x -> begin
+           x * x
+       end;
+
+julia> square = x -> x * x;
+
+julia> square(3)
+9
+```
+
+
+#### 一時的な関数を作成
+
+
+```
+julia> array = [1, 2, 3, 4, 5]
+5-element Vector{Int64}:
+ 1
+ 2
+ 3
+ 4
+ 5
+
+# array の各要素に対する操作
+julia> map(x -> x * x, array)
+5-element Vector{Int64}:
+  1
+  4
+  9
+ 16
+ 25
+
+julia> map(x -> x % 2 == 1, array)
+5-element Vector{Bool}:
+ 1
+ 0
+ 1
+ 0
+ 1
+
+julia> filter(x -> x % 2 == 1, array)
+3-element Vector{Int64}:
+ 1
+ 3
+ 5
+
+```
+
+
+## 2.4 型
+- 動的型付けであるが, 型注釈をコードに付与できる
+- 多重ディスパッチによって動的にメソッド呼び出しが行われる
+
+
+#### 多重ディスパッチ
+- 同一の名前で引数の数や方が異なる関数を行くか定義しておき, 実行時に型に応じた適切な関数が実行される仕組み
+    - C++ のオーバーロードと似ている
+- 多重ディスパッチは動的に引数の型に応じた関数が呼び出される
+- 単一ディスパッチは1つの型を元にメソッドを選ぶということ、多重ディスパッチはそれが複数の型に基いて選ぶということ
+    - https://qiita.com/dbym4820/items/dc640bbbf4303c1a4f26#%E5%A4%9A%E9%87%8D%E3%83%87%E3%82%A3%E3%82%B9%E3%83%91%E3%83%83%E3%83%81
+- 多重ディスパッチ: 動的な型情報に基づいて, 実際に呼び出すメソッドを切り変える
+    - C++ の場合: https://ufcpp.net/study/csharp/sp4_multipledispatch.html
+- How Julia Perfected Multiple Dispatch
+    - https://towardsdatascience.com/how-julia-perfected-multiple-dispatch-16675db772c2
+
+
+#### 注意点
+- オブジェクト指向プログラミング言語とは異なる
+    - オブジェクトに関数を所属させることはできない
+    - 型の継承はできない
+
+
+#### 型注釈
+- 基本的に動的型付け
+- 必要に応じて, 型の注釈をつけることができる
+- JIT コンパイル時に, コードが最適化されて実行速度を改善する場合がある
+- 多重ディスパッチが利用できる
+- 利用シーン
+    - コードの可読性を向上させたい場合
+    - 意図的なコードの最適化を行う場合
+    - 多重ディスパッチを用いる場合
+
+
+#### 実行時コンパイル
+- JIT コンパイル
+    - LLVM
+
+
+
+### 2.4.1 型の宣言
+- `::` 演算子を使う
+    - e.g., `x::Int`
+- 独自の型を定義できる
+    - プリミティブ型の宣言
+        - `julia/base/boot.jl`
+            - https://github.com/JuliaLang/julia/blob/146de38b4004e3fbd4cacc1e502fd650473cb67f/base/boot.jl#L214
+        - プリミティブ型は必ず 8 bit 単位で指定する必要がある
+- 型の階層構造
+    - 親: supertype
+        - supertype が指定されなかった場合は, `Any` 型が supertype になる
+    - 子: subtype
+
+
+### 2.4.2 型の階層構造
+- 型同士で親子関係を構築し, 全体で型をノードとするグラフを構成する
+
+#### 型の種類
+- 具体型
+    - concrete type
+        - e.g., Int64, Float64 などのプリミティブ型
+        - 具体型を親とする方を定義することはできない
+        - 型の継承もできない
+- 抽象型
+    - abstract type
+        - プリミティブ型の親やさらにその親となる型
+        - インスタンス化してオブジェクトを生成することはできない
+
+#### 型の例
+- Abstract Float 型 -> Float{16, 32, 64} など
+- Signed 型 -> Int{8, 16, 32, 64}
+- Unsigned 型 -> UInt{8, 16, 32, 64}
+- ![](https://i.gyazo.com/52422227289b715af5054d3b41fcf5c2.png)
+
+
+#### 抽象型, abstract type
+- 宣言方法
+    - `<:` 演算子は親子関係を示す
+
+```
+abstract type 型名 end
+abstract type 型名 <: 親の型 end
+```
+
+##### 親子関係の追跡
+
+```
+julia> supertype(Float32)
+AbstractFloat
+
+julia> supertype(AbstractFloat)
+Real
+
+julia> supertype(Real)
+Number
+
+julia> supertype(Number)
+Any
+
+julia> subtypes(Real)
+# 書籍の表示は, 4-element Array{Any,1}:
+4-element Vector{Any}:
+ AbstractFloat
+ AbstractIrrational
+ Integer
+ Rational
+
+julia> subtypes(AbstractFloat)
+4-element Vector{Any}:
+ BigFloat
+ Float16
+ Float32
+ Float64
+
+julia> subtypes(Float32)
+# 書籍の表示は 0-element Array{Type,1}
+Type[]
+
+```
+
+
+#### Any 型
+- 型グラフの最上位に位置する型
+- すべての型は Any 型の子孫
+- 関数の引数に型を指定しない場合は, Any 型の引数であると解釈される
+
+
+### 2.4.3 Nothing 型
+- Nothing 型は何もないことを表す
+    - nil, null 相等?
+- `nothing` という唯一のオブジェクトを持つ
+
+
+```
+julia> x = nothing
+
+julia> typeof(x)
+Nothing
+
+julia> isnothing(x)
+true
+```
+
+#### 関数の戻り値
+- 関数の戻り値がないときは, `return nothing` と同等
+- e.g., findfirst 関数
+
+
+```
+julia> findfirst("a", "Hello Julia!")
+11:11
+
+julia> findfirst("b", "Hello Julia!")
+
+julia> x = findfirst("b", "Hello Julia!")
+
+julia> typeof(x)
+Nothing
+
+```
+
+
+### 2.4.4 複合型, composite types
+- 複数の名前付きフィールドをまとめて扱うことのできる型
+- Julia では, 関数が複合型に所属するのではなく, 型の宣言とは独立している
+    - 関数が常に第一級オブジェクトとして扱われる
+        - 第一級オブジェクトとは
+            - 関数の引数として渡すことができる
+            - 複合データ型に格納できる
+
+```
+# 複合型としての構造体
+# 具体型になる -> インスタンスが生成できる
+# コンストラクタは自動的に生成される
+julia> struct Point
+           x::Int # 型注釈
+           y::Int
+       end
+
+# 複合型を引数に取るという指定のみ
+julia> function distance(p::Point)
+           sqrt(p.x^2 + p.y^2)
+       end;
+
+# 構造体のインスタンスの宣言
+julia> p = Point(2,3)
+Point(2, 3)
+
+julia> distance(p)
+3.605551275463989
+
+# 型の調査
+julia> typeof(Point)
+DataType
+
+julia> supertype(Point)
+Any
+
+julia> typeof(DataType)
+DataType
+
+julia> supertype(DataType)
+Type{T}
+```
+
+
+#### 構造体についてすこし
+- フィールドに型注釈をつけることができる
+- 構造体宣言時に, コンストラクタは自動的に生成される
+    - カスタムしたコンストラクタも定義できる
+- フィールドには `構造体名.フィールド名` でアクセスできる
+- `struct` キーワードで宣言された構造体は, 変更不可, immutable
+    - `struct` で宣言されていても, フィールドの型が, 配列など変更可能なオブジェクトの場合は変更可能
+- `mutable struct` キーワードで宣言すると, 変更可能, mutable
+
+```
+julia> struct Point
+           x::Int
+           y::Int
+       end
+
+julia> p = Point(2,3)
+Point(2, 3)
+
+julia> p.x
+2
+
+julia> p.y
+3
+
+# y=0 で初期化するコンストラクタ
+julia> Point(x) = Point(x, 0);
+
+julia> p = Point(1)
+Point(1, 0)
+
+julia> p.x
+1
+
+julia> p.x =2
+ERROR: setfield! immutable struct of type Point cannot be changed
+Stacktrace:
+ [1] setproperty!(x::Point, f::Symbol, v::Int64)
+   @ Base ./Base.jl:34
+ [2] top-level scope
+   @ REPL[36]:1
+
+```
+
+##### mutable な構造体
+
+```
+julia> mutable struct Point
+           x::Int
+           y::Int
+       end;
+
+julia> p = Point(3, 4)
+Point(3, 4)
+
+julia> p.x
+3
+
+julia> p.x = 1
+1
+
+```
+
+
+### 2.4.5 Union 型
+- 複数の型の和集合を表す型
+- `Union{型名, Nothing}` 型
+    - 型名で指定した型, もしくは, nothing を表す
+    - 値がない状態を許す型
+
+```
+# Int または, String を表す型
+julia> IntOrString = Union{Int,String}
+Union{Int64, String}
+
+julia> union_type(x::IntOrString) = x
+union_type (generic function with 1 method)
+
+julia> union_type(1)
+1
+
+julia> union_type("Julia")
+"Julia"
+
+julia> union_type(1.2)
+ERROR: MethodError: no method matching union_type(::Float64)
+Closest candidates are:
+  union_type(::Union{Int64, String}) at REPL[5]:1
+Stacktrace:
+ [1] top-level scope
+   @ REPL[8]:1
+
+```
+
+
+### 2.4.6 パラメトリック型
+- generics やテンプレートなどの機能と似ている
+- 変数に型パラメータを定義できる
+- すべての `DataType` 型のインスタンスはパラメータ化できる
+- e.g., `Point{T}` -> 型 T をパラメータとする Point 型
+    - `Point{T}` はあらゆる型 T のテンプレートとなる
+
+```
+julia> mutable struct Point{T}
+           x::T # T 型パラメータ
+           y::T
+       end
+
+# 型パラメータは, `Point{T}` をインスタンス化する際に,
+# Int64 や, Float64 などの具体的な型として実行する
+julia> p = Point(2,3)
+Point{Int64}(2, 3)
+
+# T の型を明示できる
+julia> q = Point{Int}(2,3)
+Point{Int64}(2, 3)
+
+```
+
+
+#### パラメトリック型とメソッド
+- `where T` を宣言時に付加する
+
+```
+julia> mutable struct Point{T}
+           x::T # T 型パラメータ
+           y::T
+       end
+
+# function 行に where T を付加
+julia> function distance(p::Point{T}) where T
+           println(T) # 型情報の出力
+           sqrt(p.x^2 + p.y^2)
+       end;
+
+julia> distance(Point(2,3))
+Int64
+3.605551275463989
+```
+
+
+#### 渡される型によって動作を分ける
+- 多重ディスパッチを使う -> 型によってメソッドを分ける
+
+
+```
+julia> function distance(p::Point{Int})
+        # Int 型のときの動作
+       end
+distance (generic function with 2 methods)
+
+julia> function distance(p::Point{Float64})
+           # Float64 型のときの動作
+       end
+distance (generic function with 2 methods)
+
+julia> function distance(p::Point)
+           # それ以外のときの操作
+           throw("Error")
+       end
+distance (generic function with 2 methods)
+```
+
+#### 型パラメータを指定しない構造体とインスタンスの集合
+- `Point` 型は, `Point{Float64}` や `Point{SbstractSting}` などのすべてのインスタンスを部分型として含む
+- 多重ディスパッチでは, より具体型に近い型を優先する
+- パラメトリック型の階層構造
+
+```
+julia> Point{Float64} <: Point
+true
+
+julia> Point{AbstractString} <: Point
+true
+
+```
+
+
+#### 型パラメータが複数となる場合
+
+```
+julia> struct Point2{T,U}
+           x::T
+           y::U
+       end;
+
+julia> p = Point2(2, 3.1)
+Point2{Int64, Float64}(2, 3.1)
+
+# 関数の where キーワードにも型パラメータを記述する
+julia> function distance(p::Point2{T,U}) where {T,U}
+           sqrt(p.x^2 + p.y^2)
+       end
+distance (generic function with 3 methods)
+
+```
+
+
+### 2.4.7 パラメトリック型の階層構造
+- プリミティブ型の階層構造
+    - e.g., `Int < Signed < Integer < Real < Number`
+- 包含関係は, `<:` もしくは `>:` で調べる
+
+
+```
+julia> Int <: Number
+true
+
+julia> Int >: Number
+false
+
+julia> Int <: Float64
+false
+
+```
+
+- パラメトリック型の階層構造
+    - Julia の型システムにおいて, パラメトリック型は不変
+- Kotlin の場合
+    - https://maku77.github.io/kotlin/generics/variant.html
+    - A が B のサブタイプであったとしても、Point{A} は Point{B} のサブタイプにはならない
+    - このような Generic クラスを 不変である (invariant) という
+- Go の generics 関連
+    - https://zenn.dev/syumai/articles/c42hdg1e0085btnen5hg
+
+```
+julia> typeof(Point)
+UnionAll
+
+julia> Point{Int} <: Point
+true
+
+# プリミティブ型では親子関係があったが
+# Point 型では親子関係がない
+julia> Point{Int} <: Point{Number}
+false
+
+julia> Point{Int} <: Point{Float64}
+false
+
+# もし, Point{Any} の値を, Pont{Int} が受け取ってしまったら
+# 多重ディスパッチが成り立たなくなる
+julia> Point{Int} <: Point{Any}
+false
+
+julia> Point{Any} <: Point{Int}
+false
+
+# Point{Int} 型は, Point{<:Any} 型に含まれる
+julia> Point{Int} <: Point{<:Any}
+true
+```
+
+#### 型パラメータに対する制約
+
+
+```
+# Point{Int} 型は, Point{<:Any} 型に含まれる
+julia> Point{Int} <: Point{<:Any}
+true
+
+julia> function distance(p::Point{<:Number})
+           # 処理
+       end;
+
+# 同じ意味
+julia> function distance(p::Point{T<:Number})
+           # 処理
+       end;
+
+```
+
+
+### 2.4.8 抽象型のパラメトリック型
+- 定義方法
+    - `abstract type AbstractPoint{T} end;`
+- `AbstractPoint{T}` を親とする型の定義
+
+
+```
+julia> struct Point2D{T} <: AbstractPoint{T}
+           x::T
+           y::T
+       end;
+```
+
+#### 親子関係
+
+```
+julia> Point2D{Int} <: AbstractPoint
+true
+
+julia> Point2D{Int} <: AbstractPoint{Int}
+true
+
+julia> Point2D{Int} <: AbstractPoint{Number}
+false
+
+julia> Point2D{Int} <: AbstractPoint{<:Number}
+true
+```
