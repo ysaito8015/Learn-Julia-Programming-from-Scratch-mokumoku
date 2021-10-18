@@ -22,7 +22,7 @@
     - `Sys.WORD_SIZE # 32`
     - `Int # Int32`
 
-```
+```julia
 julia> for T in [Int8,Int16,Int32,Int64,Int128,UInt8,UInt16,UInt32,UInt64,UInt128]
            println("$(lpad(T,7)): [$(typemin(T)),$(typemax(T))]")
        end
@@ -58,7 +58,7 @@ UInt128: [0,340282366920938463463374607431768211455]
 - `BigInt` 型
 - `BigFloat` 型
 
-```
+```julia
 # 書籍の例のように BigInt 型にならないですね...
 julia> x = 123567890123456789012345678901234567890
 123567890123456789012345678901234567890
@@ -70,7 +70,7 @@ julia> typeof(ans)
 Int128
 ```
 
-```
+```julia
 # https://doc.julialang.org から
 julia> x = typemax(UInt128)
 0xffffffffffffffffffffffffffffffff
@@ -91,7 +91,7 @@ addition to decimal literals)."
 
 ### 2.1.4 定数の宣言
 
-```
+```julia
 julia> const y = 1.0
 1.0
 
@@ -1518,6 +1518,7 @@ Any
 
 julia> subtypes(Real)
 # 書籍の表示は, 4-element Array{Any,1}:
+# Vector 型は, Array 型の一次元の場合
 4-element Vector{Any}:
  AbstractFloat
  AbstractIrrational
@@ -1922,4 +1923,394 @@ false
 
 julia> Point2D{Int} <: AbstractPoint{<:Number}
 true
+```
+
+
+## 2.5 コレクション
+- 一連のデータを格納しておく型あるいはオブジェクトのこと
+    - タプル, リスト, 辞書, 集合
+    - Int64, Float64 型といったプリミティブ型などをまとめて一つのオブジェクトとして扱う
+- DataStructures.jl
+    - ヒープや優先度付きキュー
+    - 標準以外で提供されているデータ構造
+- `foo!()` など `!` がついている関数は, 引数の全てまたは一部を, 変更あるいは破棄する
+    - 破壊的変更を行う
+    - `push!`, `insert!`
+    - `!` がついていない関数は, 破壊的変更を行わない
+
+
+### 2.5.1 タプル
+- 複数のオブジェクトをまとめるデータ構造
+    - immutable, 値を変更できない
+- 関数から複数の値をまとめて返す場合など, いくつかの値をまとめて扱いたい場合に有用
+    - 要素の数が多いときや, オブジェクト同士の数値演算は, Array 型を用いる
+- `(1, 2, 3)` 丸括弧で囲む
+
+
+```
+julia> t = (1, 2, 3)
+(1, 2, 3)
+
+julia> typeof(t)
+Tuple{Int64, Int64, Int64}
+
+# インデックスでアクセスできる
+julia> t[1]
+1
+
+# 変更不可
+julia> t[1] = 4
+ERROR: MethodError: no method matching setindex!(::Tuple{Int64, Int64, Int64}, ::Int64, ::Int64)
+Stacktrace:
+ [1] top-level scope
+   @ REPL[4]:1
+
+```
+
+
+#### Tuple 型の使用例
+- e.g., Array 型のサイズの表現
+
+
+```
+julia> array = rand(4, 3)
+4×3 Matrix{Float64}:
+ 0.27528   0.970701  0.408425
+ 0.34557   0.303499  0.806331
+ 0.478434  0.386788  0.46488
+ 0.244527  0.206331  0.43859
+
+julia> size(array)
+(4, 3)
+
+```
+
+
+- 関数の可変長引数
+
+
+```
+julia> f(x...) = x
+f (generic function with 1 method)
+
+julia> y = f(1, 2, 3)
+(1, 2, 3)
+
+julia> typeof(y)
+Tuple{Int64, Int64, Int64}
+
+```
+
+
+### 2.5.2 名前付きタプル, named tuple
+- 各要素に名前をつけておくことができるタプル
+    - immutable, 変更不可
+- `(a = 1. b = 2)`
+    - NamedTuple 型
+    - タプルのキーは `Symbol` 型
+- 基本的に一時的に使用するオブジェクトという扱い
+
+#### named tuple 使用例
+
+```julia
+julia> t = (a = 1, b = 2, c = 3)
+(a = 1, b = 2, c = 3)
+
+julia> t.a
+1
+
+julia> t[2]
+2
+
+julia> t[:c]
+3
+
+# キーのみを取得
+julia> keys(t)
+(:a, :b, :c)
+
+# 値のみを取得
+julia> values(t)
+(1, 2, 3)
+
+```
+
+
+### 2.5.3 リスト
+- 系列データを格納し, 値の追加や削除ができるコレクション
+    - PYthon や Java のリストと同じ
+- `DataStructures.jl`
+    - https://github.com/JuliaCollections/DataStructures.jl
+
+
+```julia
+julia> list = []
+Any[]
+
+julia> list = [2, 2]
+2-element Vector{Int64}:
+ 2
+ 2
+
+julia> list = [1, 2]
+2-element Vector{Int64}:
+ 1
+ 2
+
+julia> push!(list, 3)
+3-element Vector{Int64}:
+ 1
+ 2
+ 3
+
+ # 末尾の要素を取り出す
+julia> pop!(list)
+3
+
+julia> list
+2-element Vector{Int64}:
+ 1
+ 2
+
+ # i 番目に要素を挿入する
+julia> insert!(list, 2, 4)
+3-element Vector{Int64}:
+ 1
+ 4
+ 2
+
+ # i 番目の要素を削除する
+julia> deleteat!(list, 1)
+2-element Vector{Int64}:
+ 4
+ 2
+
+```
+
+
+### 2.5.4 辞書, Dictionary
+- キーと値のペアを格納するコレクション
+- キーは辞書内でユニークである
+    - キーから値を検索する
+- https://docs.julialang.org/en/v1/base/collections/#Base.Dict
+
+
+```julia
+julia> d = Dict{String, Int}
+Dict{String, Int64}
+
+# 辞書の宣言時に () を忘れるとキーと値を登録できない
+julia> d["a"] = 1
+ERROR: MethodError: no method matching setindex!(::Type{Dict{String, Int64}}, ::Int64, ::String)
+Stacktrace:
+ [1] top-level scope
+   @ REPL[2]:1
+
+julia> d = Dict([("a", 1)])
+Dict{String, Int64} with 1 entry:
+  "a" => 1
+
+julia> d = Dict([("b", 2)])
+Dict{String, Int64} with 1 entry:
+  "b" => 2
+
+# 辞書が上書きされている
+julia> d
+Dict{String, Int64} with 1 entry:
+  "b" => 2
+
+# 宣言方法, Dict([("key", value), ("key", value)])
+julia> d = Dict([("a", 1), ("b", 2)])
+Dict{String, Int64} with 2 entries:
+  "b" => 2
+  "a" => 1
+
+julia> d
+Dict{String, Int64} with 2 entries:
+  "b" => 2
+  "a" => 1
+
+# キーと値のペアを => でつないで初期化できる
+julia> Dict("a" => 1, "b" => 2)
+Dict{String, Int64} with 2 entries:
+  "b" => 2
+  "a" => 1
+
+```
+
+#### 辞書の型と初期化
+
+```julia
+# Dict{キーの型, 値の型}() と初期化する
+julia> d = Dict{String, Int}()
+Dict{String, Int64}()
+
+julia> d["a"] =1; d["b"] = 2
+2
+
+julia> d
+Dict{String, Int64} with 2 entries:
+  "b" => 2
+  "a" => 1
+
+# 書籍の表記では初期化できない
+julia> d2 = Dict{}(String)
+ERROR: ArgumentError: Dict(kv): kv needs to be an iterator of tuples or pairs
+Stacktrace:
+ [1] Dict(kv::Type)
+   @ Base ./dict.jl:132
+ [2] top-level scope
+   @ REPL[24]:1
+
+# 型の情報を必ず指定する
+julia> d2 = Dict{String, Any}()
+Dict{String, Any}()
+
+julia> d3 = Dict()
+Dict{Any, Any}()
+
+
+```
+
+
+#### 辞書の値の読み書き
+
+
+```julia
+julia> d["a"]
+1
+
+# キーが辞書に存在しないときはエラーを返す
+julia> d["c"]
+ERROR: KeyError: key "c" not found
+Stacktrace:
+ [1] getindex(h::Dict{String, Int64}, key::String)
+   @ Base ./dict.jl:482
+ [2] top-level scope
+   @ REPL[30]:1
+
+julia> d["a"] = 3
+3
+
+julia> d
+Dict{String, Int64} with 2 entries:
+  "b" => 2
+  "a" => 3
+
+```
+
+#### WeakKeyDict() 型
+- キーがオブジェクトへの弱い参照であるハッシュテーブルの作成
+    - ハッシュテーブル内で参照されていても, ガベージコレクションされる
+
+
+#### IdDict 型
+- IdDict{キー, 値}() オブジェクト ID をハッシュに使うハッシュテーブルを構築する.
+    - キー同士, バリュー同士は, `===` 演算子により, 等価性が判定される
+
+
+### 2.5.5 集合
+- 集合は, キーのみを保持する辞書
+- データからユニークな要素だけを取りだす
+- `Set(型)`
+    `Set()` とすると `Any` 型になる
+
+```julia
+julia> s = Set()
+Set{Any}()
+
+julia> s = Set([1, 2])
+Set{Int64} with 2 elements:
+  2
+  1
+
+julia> typeof(s)
+Set{Int64}
+
+julia> push!(s, 3)
+Set{Int64} with 3 elements:
+  2
+  3
+  1
+
+# 和集合, A={1,2,3}, B={3,4}, A∨B={1,2,3,4}
+julia> union(s, [3,4])
+Set{Int64} with 4 elements:
+  4
+  2
+  3
+  1
+
+# 積集合, A={1,2,3}, B={3,4}, A∧B={3}
+julia> intersect(s, [3,4])
+Set{Int64} with 1 element:
+  3
+
+```
+
+#### 集合演算
+
+```julia
+julia> issubset([1,2], [1,2,3])
+true
+
+julia> [1,2] \subseteq # タブキーを押す
+julia> [1,2] ⊆ [1,2,3]
+true
+
+```
+
+
+### 2.5.6 コレクション共通の関数
+
+
+| 関数                             | 概要                       |
+|----------------------------------|----------------------------|
+| isempty(collection) -> Bool      | コレクションが空かどうか   |
+| empty!(collection) -> collection | コレクションを空にする     |
+|length(collection) -> Int         | コレクションの要素数       |
+| eltype(collection) -> Type       | コレクションの型パラメータ |
+
+
+
+### 2.5.7 コレクションのイテレーション
+- for 文によるイテレーション
+
+
+```julia
+julia> d = Dict("a" => 1, "b" => 2, "c" => 3)
+Dict{String, Int64} with 3 entries:
+  "c" => 3
+  "b" => 2
+  "a" => 1
+
+julia> for (key, value) in d
+           println(key)
+       end
+c
+b
+a
+
+```
+
+
+#### for 文の変換
+
+```julia
+julia> for x in collection
+           # 処理
+       end
+
+julia> next = iterate(collection)
+# iterate() 関数によって, コレクションの最初の要素が取得される
+julia> while next != nothing
+           # collection の要素がなくなるまで繰り返す
+           (x, state) = next
+           # (x, state) のタプル
+           # state は, コレクションの状態
+           # 処理
+           next = iterate(collection, state)
+           # iterate() 関数によって, コレクションの次の要素が取得される
+       end
+
 ```
