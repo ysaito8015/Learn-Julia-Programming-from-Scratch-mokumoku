@@ -2995,6 +2995,7 @@ julia> filter(x -> x < 0.5, A)
     - もとの配列が変更されると, サブ配列の値も変更される
 - サブ配列は, 参照情報のみであるので, メモリを節約できる
 
+
 ```julia
 julia> A = rand(3, 3)
 3×3 Matrix{Float64}:
@@ -3015,3 +3016,257 @@ julia> view(A, 1:2, :)
  0.683672  0.861804  0.942962
 
 ```
+
+
+## 2.7 モジュール
+- 名前の衝突は, namespace を使うことで回避できる
+- Julia のパッケージは, それぞれのパッケージが固有の名前空間を持つことでパッケージ間の名前の衝突を回避している
+
+
+### 2.7.1 モジュールの機能
+- 公式ドキュメント, [Mocules](https://docs.julialang.org/en/v1/manual/documentation/#Modules)
+- モジュール, module
+    - namespace として機能するオブジェクト
+- あるモジュールの namespace に属する名前は, そのモジュール名を通して参照できる
+- private な参照はできない
+    - `Base.sin` のようにモジュール名で限定した名前を使うと, エクスポートされていない名前にもアクセスできる
+
+
+#### 現在有効なモジュールを確認する
+
+- `@__MODULE__` と入力することで, 現在位置でどのモジュールが有効になっているかを表示できる
+
+
+```julia
+julia> @__MODULE__
+Main
+
+julia> Main.gcd(12,8)
+4
+
+julia> gcd(12,8)
+4
+
+```
+
+
+### 2.7.2 既存モジュールの利用
+- 既存モジュールから現在のモジュールに名前を取り込む方法
+- つまり, パッケージの利用方法
+
+
+```julia
+julia> methods(mean)
+ERROR: UndefVarError: mean not defined
+Stacktrace:
+ [1] top-level scope
+   @ REPL[5]:1
+
+julia> using Statistics
+
+julia> mean([1,2,3])
+2.0
+
+julia> std([1,2,3])
+1.0
+
+```
+
+
+#### 指定の関数のみを取り込む
+- モジュール名の後に `:` を書いた後取り込む名前を指定する
+    - 複数取り込む場合は, `using Statistics: mean, std` とする
+
+
+```julia
+julia> using Statistics: mean
+
+julia> mean([1,2,3])
+2.0
+
+julia> std([1,2,3])
+ERROR: UndefVarError: std not defined
+Stacktrace:
+ [1] top-level scope
+   @ REPL[4]:1
+
+```
+
+
+#### モジュール自身を取り込む
+- モジュール自身を取り込むと, 関数は取り込まれない
+
+
+```julia
+julia> using Statistics: Statistics
+
+julia> methods(mean)
+ERROR: UndefVarError: mean not defined
+Stacktrace:
+ [1] top-level scope
+   @ REPL[3]:1
+
+julia> methods(Statistics.mean)
+# 5 methods for generic function "mean":
+[1] mean(r::AbstractRange{var"#s814"} where var"#s814"<:Real) in Statistics at /home/ysaito/src/julia-1.6.3/share/julia/stdlib/v1.6/Statistics/src/Statistics.jl:185
+[2] mean(A::AbstractArray; dims) in Statistics at /home/ysaito/src/julia-1.6.3/share/julia/stdlib/v1.6/Statistics/src/Statistics.jl:164
+[3] mean(itr) in Statistics at /home/ysaito/src/julia-1.6.3/share/julia/stdlib/v1.6/Statistics/src/Statistics.jl:44
+[4] mean(f, A::AbstractArray; dims) in Statistics at /home/ysaito/src/julia-1.6.3/share/julia/stdlib/v1.6/Statistics/src/Statistics.jl:104
+[5] mean(f, itr) in Statistics at /home/ysaito/src/julia-1.6.3/share/julia/stdlib/v1.6/Statistics/src/Statistics.jl:61
+
+```
+
+
+### 2.7.3 using 文の注意点
+- `using Foo` では, モジュールのすべての名前を取り込んでしまう
+- `.jl` などのスクリプトを共有する際は, 取り込む名前を指定する
+- `import` 文では, 名前を暗黙的に取り込まない
+
+
+### 2.7.4 新しいモジュールの定義
+- モジュールの名前は大文字で始める（慣習）
+- `module ... end` の間ではインデントを入れない
+
+
+```julia
+module SampleModule
+
+using BigLib: thing1, thing2
+import Base.show
+
+# export 文: using 文使用時にどの名前が取り込まれるかの指定
+export MyType, foo
+struct MyType
+    x
+end
+
+bar(x) = 2x
+foo(a::MyType) = bar(a.x) + 1
+
+show(io::IO, a::MyType) = print(io, "MyType $(a.x)")
+
+end
+```
+
+
+#### REPL でのモジュール定義
+
+
+```julia
+julia> module Greeting
+       hello(name) = println("Hello, $(name).")
+       end
+Main.Greeting
+
+julia> Greeting.hello("Julia")
+Hello, Julia.
+
+```
+
+
+#### 入れ子にしたモジュール定義
+- 参照方法
+    - `A.B1.foo(0.12)`
+
+```julia
+module A
+
+module B1
+export foo
+foo(a::Float64) = a * 2
+#...
+end
+
+module B2
+#...
+end
+
+end
+```
+
+
+### 2.7.5 モジュールの相対パス指定
+- `LOAD_PATH` 変数
+    - `using` や `import` で指定されたモジュール名が格納される
+- `module` で定義したばかりのモジュールは, `using` 文で指定してもエラーになる
+    - `using` により, `LOAD_PATH` から探そうとするが, そこには格納されていないため
+
+```julia
+julia> module Greeting
+       hello(name) = println("Hello, $(name).")
+       end
+Main.Greeting
+
+julia> using Greeting
+ERROR: ArgumentError: Package Greeting not found in current path:
+- Run `import Pkg; Pkg.add("Greeting")` to install the Greeting package.
+
+Stacktrace:
+ [1] require(into::Module, mod::Symbol)
+   @ Base ./loading.jl:893
+
+```
+
+
+#### 相対パス指定
+- `.ModuleNmane` のように `.` をつける
+- モジュール定義内で, 隣の子ノード (siblings?) のモジュールを読み込むとき
+    - `..` とドットを重ねる
+
+
+```julia
+julia> module Greeting
+       export hello
+       hello(name) = println("Hello $(name).")
+       end
+Main.Greeting
+
+julia> using .Greeting
+
+julia> methods(hello)
+# 1 method for generic function "hello":
+[1] hello(name) in Main.Greeting at REPL[1]:3
+
+```
+
+
+### 2.7.6 ファイルの分割
+- `include` 関数
+    - モジュールを複数のファイルに分けて定義できる
+    - ソースコードのファイルを取り込む関数
+    - 引数にファイルパスを渡すと, Julia コードとして評価する
+        - `include` を呼び出したファイルからの相対パス
+
+```julia
+module Foo
+include("file1.jl")
+include("file2.jl")
+include("file3.jl")
+end
+```
+
+
+### 2.7.7 他のモジュールで定義された関数の拡張
+- `using` 文
+    - 取り込んだ関数の拡張はできない
+- `import` 文
+    - 取り込んだ関数の拡張ができる
+- `Base.length(v::Vece) = 3`
+    - `import` 文を使わずに関数を拡張する方法
+
+
+```julia
+julia> struct Vec3{T} <: AbstractVector{T}
+           x::T
+           y::T
+           z::T
+       end
+
+julia> import Base: length
+
+julia> length(v::Vec3) = 3
+length (generic function with 84 methods)
+
+```
+
+
