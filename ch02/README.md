@@ -3718,3 +3718,255 @@ end
 
 
 ## 2.9 C 言語の呼び出し
+- 動的リンクライブラリとしてビルドされていれば, Julia から利用できる
+    - Fortran ライブラリについて[公式ドキュメント](https://docs.julialang.org/en/v1/manual/calling-c-and-fortran-code/#Calling-C-and-Fortran-Code)
+
+
+### 2.9.1 ccall 構文
+- 使い方
+    - `ccall(C の関数, 戻り値の型, 引数の型, 引数1, 引数2, ...)`
+- `ccall` 自体を引数として別の関数に渡したりなどはできない
+
+
+```julia
+# sin 関数の呼び出し
+julia> ccall(:sin, Cdouble, (Cdouble,), 1.0)
+0.8414709848078965
+
+```
+
+- `:sin`
+    - 呼び出す関数
+    - 標準ライブラリ以外は, ライブラリ名も必要
+        - 書式: `(関数名, ライブラリ名)`
+            - e.g., `(:compress, "libz")`
+- `Cdouble`
+    - 戻り値の型が C の double 型に対応することを指定している
+    - 他の例
+        - `int` 型の別名, `Cint`
+        - 戻り値が `void`, `Cvoid` 型
+    - 呼び出す C の関数のマニュアルやヘッダファイルに書かれた宣言を見て決める
+    - 戻り値の型や引数の型を謝ると正しく呼び出せない
+- `(Cdouble,)`
+    - 関数に渡す引数の型を指定するタプル
+    - 引数は一つしかないので, 要素が一つのタプル
+- `1.0`
+    - 実際に `sin` 数に渡される引数
+    - 第３引数に指定されたデータ型に変換されてから渡される
+    - 変換は `Base.cconvert` 関数で行われる
+        - `ccall` 構文に指定した引数の型と実際の引数の型が厳密に一致している必要はない
+
+
+```julia
+julia> Base.cconvert(Cdouble, 1) isa Cdouble
+true
+
+```
+
+
+### 2.9.2 ポインタの受け渡し
+- 引数がポインタ型
+    - e.g.,
+        - `char *name` は, 末端が NUL で埋められた文字列表現
+        - Julia の `Cstring` 型が対応
+- 戻り値がポインタ型
+    - `unsafe_string` 関数を使って, C の文字列表現から, Julia の文字列表現へ変換する
+    - 正しく文字列を刺さないポインタを渡された場合には, 深刻な問題を引き起こす可能性がある
+
+
+```julia
+# getenv 関数を呼び出す
+julia> ccall(:getenv, Cstring, (Cstring,), "HOME")
+Cstring(0x00007ffd163d02c8)
+
+# ポインタから文字列を読み出す
+julia> unsafe_string(ans)
+"/home/ysaito"
+
+# 存在しない環境変数を取得しようとすると
+# NUL ポインタを返す
+julia> ccall(:getenv, Cstring, (Cstring,), "NOTEXISTS")
+Cstring(0x0000000000000000)
+
+# Julia の文字列に変換できないので例外を返す
+julia> unsafe_string(ans)
+ERROR: ArgumentError: cannot convert NULL to string
+Stacktrace:
+ [1] unsafe_string
+   @ ./strings/string.jl:70 [inlined]
+ [2] unsafe_string(s::Cstring)
+   @ Base ./c.jl:193
+ [3] top-level scope
+   @ REPL[8]:1
+
+```
+
+
+#### 文字列以外のポインタ処理
+- C の関数が `int*` や `double[]` のようなポインタ型を引数として受け取る場合には, Julia 側では, `Ref` 関数で参照を作る
+- Julia の値は `Ref` 関数でラップできる
+- ラップされた値を取り出すには, `[]` でデリファレンスする
+
+
+```julia
+# 参照の作成
+julia> x = Ref(0)
+Base.RefValue{Int64}(0)
+
+# デリファレンス
+julia> x[]
+0
+
+# 参照先の更新
+julia> x[] += 1
+1
+
+julia> x
+Base.RefValue{Int64}(1)
+
+# デリファレンス
+julia> x[]
+1
+
+```
+
+
+#### インクリメントする C ライブラリの呼び出し例
+
+```clang
+// libinc.c
+void inc(int* x) {
+	*x += 1;
+}
+```
+
+```shell
+$ gcc -std=c99 -shared -fPIC -o libinc.so libinc.c
+```
+
+
+```julia
+julia> x = Ref{Cint}(0)
+Base.RefValue{Int32}(0)
+
+julia> x[]
+0
+
+julia> ccall((:inc, "./libinc.so"), Cvoid, (Ref{Cint},), x)
+
+julia> x[]
+1
+
+```
+
+
+#### 配列の受け渡し例
+
+```clang
+// libsum.c
+#include <stddef.h>
+
+double sum(const double xs[], size_t n) {
+	double s = 0;
+	for (size_t i = 0; i < n; i++)
+		s += xs[i];
+	return s;
+}
+```
+
+```shell
+$ gcc -std=c99 -shared -fPIC -o libsum.so libsum.c
+```
+
+
+```julia
+julia> xs = [1.0, 2.0, 3.0]
+3-element Vector{Float64}:
+ 1.0
+ 2.0
+ 3.0
+
+julia> ccall((:sum, "./libsum.so"), Cdouble, (Ref{Cdouble}, Csize_t), xs, length(xs))
+6.0
+
+```
+
+
+### 2.9.3 構造体の受け渡し
+- C の `struct` で定義された構造体と, Julia の `struct` や `mutable struct` で定義された複合型のメモリレイアウトには互換性がある
+
+
+```clang
+// libpoint.c
+#include <math.h>
+
+typedef struct {
+	double x;
+	double y;
+} point2d_t;
+
+double distance(point2d_t p) {
+	return sqrt(p.x * p.x + p.y * p.y);
+}
+```
+
+
+```shell
+gcc -std=c99 -shared -fPIC -o libpoint.so libpoint.c
+```
+
+```julia
+julia> struct Point2D
+           x::Cdouble
+           y::Cdouble
+       end
+
+julia> ccall((:distance, "./libpoint.so"), Cdouble, (Point2D,), Point2D(1,2))
+2.23606797749979
+
+```
+
+
+#### 関数を C に加えて値を更新してみる
+
+```clang
+// libpoint.c
+#include <math.h>
+
+typedef struct {
+	double x;
+	double y;
+} point2d_t;
+
+double distance(point2d_t p) {
+	return sqrt(p.x * p.x + p.y * p.y);
+}
+
+void move(point2d_t *p, double dx, double dy) {
+	p->x += dx;
+	p->y += dy;
+}
+```
+
+
+```shell
+$ gcc -std=c99 -shared -fPIC -o libpoint.so libpoint.c
+```
+
+
+```julia
+julia> mutable struct Point2D
+           x::Cdouble
+           y::Cdouble
+       end
+
+julia> p = Point2D(0,0)
+Point2D(0.0, 0.0)
+
+julia> ccall((:move, "./libpoint.so"), Cvoid, (Ref{Point2D}, Cdouble, Cdouble), Ref(p), 1, 3)
+
+# p の座標が変更されている
+julia> p
+Point2D(1.0, 3.0)
+
+```
