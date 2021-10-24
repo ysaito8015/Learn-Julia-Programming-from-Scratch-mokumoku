@@ -3270,3 +3270,451 @@ length (generic function with 84 methods)
 ```
 
 
+## 2.8 メタプログラミング
+- プログラムを使ってプログラミングする手法
+- プログラムを使ったコードの生成や書き換え
+- マクロ機能 `@assert`
+    - `@` で始まるものはマクロの呼び出し
+        - 受け取ったコードをオブジェクトや別のコードに書き換える
+- 非標準文字列リテラル, non-standard string literal
+    - `r"\d+`
+        - マクロの一種であり, 受け取った文字列をオブジェクトや別のコードへと変換する
+
+
+### 2.8.1 シンボル
+- シンボルとは
+    - データ型の一種
+    - 処理系の内部で使われる名前に対応する
+        - e.g., `foo` という変数を使用すると, 構文解析時に `foo` という名前のシンボルが処理系の内部に作られる
+- `Symbol` 型
+    - 書式: `:名前`
+- シンボルは同じ名前を示すオブジェクトは一つしか作られない
+
+
+```julia
+julia> :foo
+:foo
+
+julia> typeof(:foo)
+Symbol
+
+```
+
+#### コンストラクタを使用した例
+
+```julia
+julia> Symbol("bar")
+:bar
+
+# コンストラクタに複数の引数を与えると結合されたシンボルができる
+julia> Symbol("foo", :bar, 9)
+:foobar9
+
+# 同名のシンボルはひとつだけ
+julia> Symbol("foo") == :foo
+true
+
+```
+
+
+### 2.8.2 構文木の表現
+- 書いたコードは, 処理系に読み込まれると構文解析され, 抽象構文木というデータ構造に変換される
+- 構文木をオブジェクトして取り出す記法: `:(foo)`
+    - クォート, quote と呼ぶ
+- [公式ドキュメント](https://docs.julialang.org/en/v1/devdocs/ast/#Julia-ASTs)
+
+
+```julia
+julia> ex = :(2x + 1)
+:(2x + 1)
+
+```
+
+
+#### 複数行のクォート
+- `quote ... end` キーワードを使う
+
+
+```julia
+julia> quote
+           2x + 1
+           3y + 2
+       end
+quote
+    #= REPL[7]:2 =#
+    2x + 1
+    #= REPL[7]:3 =#
+    3y + 2
+end
+
+```
+
+#### Expr 型のオブジェクト
+- 構文木は `Expr` 型のオブジェクト
+    - "expression" の略
+    - `head` フィールド
+        - 構文木の種類
+    - `args` フィールド
+        - 構成要素の保持
+
+
+#### dump 関数
+- `dump()` 関数で, 構成要素を表示できる
+
+```julia
+julia> dump(ex)
+Expr
+  # call というシンボルが格納されている
+  # この構文木が関数呼び出しであることを示している
+  head: Symbol call
+  # args フィールドの最初の要素が呼び出す関数名
+  # 2x と 1 を引数として + 関数を呼び出す
+  args: Array{Any}((3,))
+    # 3 つのシンボル
+    # +, 2x に対応する別の構文木, 整数 1
+    1: Symbol +
+    2: Expr
+      head: Symbol call
+      # 2 と x を引数として, * 関数を呼び出す
+      args: Array{Any}((3,))
+        1: Symbol *
+        2: Int64 2
+        3: Symbol x
+    3: Int64 1
+
+```
+
+
+#### その他の構文木
+- `x = 10`
+
+
+```julia
+julia> dump(:(x = 10))
+Expr
+  # = というシンボルが格納されている
+  # 代入を表す
+  head: Symbol =
+  args: Array{Any}((2,))
+    1: Symbol x
+    2: Int64 10
+
+```
+
+
+### 2.8.3 構文木の補間
+- 補間, interpolation
+- クォートで作られた構文木には, 別の構文木やリテラルを埋め込める
+    - `$ex` と `$(ex)` は等価
+    - `$(func(ex))` 関数を適用した結果を埋め込める
+
+
+```julia
+julia> ex = 1
+1
+
+# 整数リテラルの補間
+julia> :(2x + $(ex))
+:(2x + 1)
+
+julia> ex = :(3y + 1)
+:(3y + 1)
+
+# 構文木の補間
+julia> :(2x + $(ex))
+:(2x + (3y + 1))
+
+```
+
+
+#### 補間するものがシンボルの場合
+- `$(ex)` の結果は, `y` になる
+- シンボルとして埋め込む場合は `$(QuoteNode(ex))` を利用する
+
+
+```julia
+julia> ex = :y
+:y
+
+julia> :(2x + $(ex))
+:(2x + y)
+
+julia> :(2x + $(QuoteNode(ex)))
+:(2x + :y)
+
+julia> 
+```
+
+
+### 2.8.4 構文木の評価
+- 構文木は, eval 関数で評価できる
+- 評価とは, 構文木を実行し, その結果を得ること
+- `eval` 関数は, 構文木を引数として受け取り, 現在のモジュールでその構文木を実行し結果を返す
+
+
+```julia
+julia> x = 10
+10
+
+# 変数 x は 10 に束縛されている
+# 2 * 10 + 1 を計算している
+julia> eval(:(2x + 1))
+21
+
+```
+
+
+#### 評価のスコープ
+- 評価は常にモジュールのグローバルスコープで行われる
+
+
+```julia
+julia> function test()
+           # 関数内のローカル変数を定義
+           x = "local"
+           # eval 関数は Main モジュールで実行される
+           # つまりグローバル変数としての X に代入している
+           eval(:(x = "global"))
+           println(x)
+       end
+test (generic function with 1 method)
+
+julia> test()
+local
+
+julia> x
+"global"
+
+```
+
+
+#### eval 関数を利用したメタプログラミング
+- ビットグラフを持つ３つの定数を導入する
+
+
+```julia
+julia> for (i, name) in enumerate([:A, :B, :C])
+           eval(:(const $(Symbol(:FLAG_, name)) = $(UInt16(1) << (i - 1))))
+       end
+
+julia> FLAG_A, FLAG_B, FLAG_C
+(0x0001, 0x0002, 0x0004)
+
+```
+
+
+#### @eval マクロ
+- `eval` 関数と同じ機能を有する
+-  `@eval` は, 与えられたコードをクォートし, その結果を `eval` 関数で評価する
+
+
+```julia
+julia> for (i, name) in enumerate([:A, :B, :C])
+           @eval const $(Symbol(:FLAG_, name)) = $(UInt16(1) << (i - 1))
+       end
+
+julia> FLAG_A, FLAG_B, FLAG_C
+(0x0001, 0x0002, 0x0004)
+
+```
+
+
+### 2.8.5 マクロの機能
+- マクロをは与えられたコードを別のコードに変換してから実行する仕組み
+- `@` 記号で始まる
+- マクロの展開, expansion
+    - 処理系がマクロ呼び出しに渡されたコードを変換して別のコードに置き換える処理
+- 展開の結果は, `@macroexpand` マクロで確認できる
+- `@macroexpand`
+    - 与えられた式にあるマクロ呼び出しを添加した構文木を返す
+- マクロ呼び出しの展開は, コンパイルの早い段階で行われる
+- [公式ドキュメント](https://docs.julialang.org/en/v1/manual/metaprogramming/#man-macros)
+
+
+```julia
+julia> @macroexpand @assert x > 0
+:(if x > 0
+      nothing
+  else
+      Base.throw(Base.AssertionError("x > 0"))
+  end)
+
+```
+
+
+#### マクロの呼び出し
+- 2 種類の呼び出し, 引数にカッコありとなし
+    - `@macro(ex1, ex2, ex3)`
+    - `@macro ex1, ex2, ex3`
+        - 必要がなければ, カッコは省略する
+
+
+```julia
+julia> :(@macro x + y) == :(@macro(x + y))
+true
+
+julia> :(@macro x +) == :(@macro(x, +))
+true
+
+```
+
+
+#### 文字列のみを受け取るマクロ
+- 非標準文字列リテラル, non-standard string literal
+    - `foo_str`, suffic が `_str`
+        - `@foo_str` は `foo"..."` のように呼び出せる
+    - 主に特定のオブジェクトのリテラルを定義するのに使われる
+    - e.g., 正規表現リテラル
+
+
+### 2.8.6 標準ライブラリにあるマクロ
+- コンパイラへのヒント
+    - `@inbounds`, `@inline`, `@fastmath`
+- 構文の拡張
+    - `@assert`, `@enum`, `@view`
+- 開発の補助
+    - `@less`, `2time`, `@code_typed`
+- 特殊なリテラル
+    - `@r_str`, `@big_str`
+
+
+#### コンパイラへのヒントを出すマクロ
+- 最適化などのヒントになる情報を構文kに差し込むことでコンパイラに渡すマクロ
+- `@inbounds` マクロ
+    - 配列要素の参照が配列の有効な範囲に収まることをプラグラマが保証するので, 実行時に範囲のチェックを省いても良い
+- `@inline` マクロ
+    - 関数を積極的にインラインスべきというヒント
+- `@fastmath` マクロ
+    - 浮動小数点数の計算に関して IEEE754 の制約を超えて最適化することを許可するマクロ
+
+
+#### 構文の拡張をするマクロ
+- プログラマが手で書くには面倒な処理を自動化するマクロ
+- `@asser` マクロ
+    - 与えられた式の条件が成立するかどうかを実行時にチェックし, その条件が成立しなければ `AssertionError` 例外を送出する
+- `@enum` マクロ
+    - C の enum 構文に相当する機能を提供する
+- `@view` マクロ
+    - 配列の一部をコピーではなく参照するようにするマクロ
+
+
+#### 開発補助のためのマクロ
+- REPL などの対話型環境で用いられるマクロ
+- `@less` マクロ
+    - 関数呼び出しの式を受け取って, 呼び出されるメソッドのソースコードを表示する
+- `@time` マクロ
+    - 処理を受け取ってその実行にかかった時間やメモリ使用量を表示する
+- `@code_typed` マクロ
+    - 関数呼び出しの式を受け取って, コンパイラによる型推論の結果を表示する
+
+
+#### 特殊なリテラルを定義するマクロ
+- 非標準文字列リテラルとして機能し, 特定のオブジェクトを作るマクロ
+- `@r_str` マクロ
+    - 正規表現のオブジェクトを作るのに使われる
+- `@big_str` マクロ
+    - `BigInt` 型や, `BigFloat` 型などの可変長サイズの整数や, 浮動小数点数を作るのに使われる
+
+
+### 2.8.7 マクロの定義
+- `macro` キーワード
+    - マクロ名は, 関数名と同様の名前が使える
+    - 引数には, 呼び出し側で与えられた構文木やリテラルが入る
+    - `return` で指定された式か, 最後に評価された式が結果として返される
+
+
+```julia
+macro マクロ名(引数1, 引数2, ...)
+    # 処理
+end
+```
+
+
+#### マクロ定義の例
+- Julia では, マクロの展開をするときに, デフォルトで式の中の識別子をマクロが定義されてモジュールのフローバル変数に置き換える
+    - これを防ぐには, `esc` 関数を使う
+- `esc` 関数は, 構文木にある識別子を別の識別子に置き換えず, そのままにする
+
+
+```julia
+julia> macro plus1(ex)
+           :($(ex) + 1)
+       end
+@plus1 (macro with 1 method)
+
+# 変数 x が Main モジュールのグローバル変数 x になっている
+julia> @macroexpand @plus1 2x
+:(2 * Main.x + 1)
+
+julia> x = 10
+10
+
+julia> @plus1 2x
+21
+
+# esc 関数で, 変数 x をグローバル変数に変換しないようにする
+julia> macro plus1(ex)
+           :($(esc(ex)) + 1)
+       end
+@plus1 (macro with 1 method)
+
+# 変数 x が, ローカル変数となっている
+julia> @macroexpand @plus1 2x
+:(2x + 1)
+
+```
+
+
+### 2.8.8 識別子の変換規則
+- マクロ展開時に, 識別子がローカル変数に変換される例外
+    - `global` 宣言無しで代入されたとき
+    - `local` 宣言があるとき
+    - 関数定義の引数であるとき
+- ローカル変数と解釈された識別子は, マクロ展開時に新しい変数に置き換えられる
+    - 衛生的マクロ, hygienic macro
+
+
+```julia
+julia> macro time_ns(ex)
+           quote
+               t1 = time_ns()
+               val = $(esc(ex))
+               t2 = time_ns()
+               val, Int(t2 - t1)
+           end
+       end
+@time_ns (macro with 1 method)
+
+# 計算結果と, 実行時間のタプルを返す
+julia> @time_ns sum(randn(1000))
+(-48.784427777440165, 112017647)
+
+# ２回目の実行では, 計算が高速になる
+julia> @time_ns sum(randn(1000))
+(-54.506982367056324, 19110)
+
+julia> @macroexpand @time_ns sum(randn(1000))
+quote
+    #= REPL[1]:3 =#
+    # Main モジュールの time_ns() に変換されている
+    var"#7#t1" = Main.time_ns()
+    #= REPL[1]:4 =#
+    # esc 関数でエスケープした, ex つまり, sum(randn(1000)) はそのまま
+    var"#8#val" = sum(randn(1000))
+    #= REPL[1]:5 =#
+    var"#9#t2" = Main.time_ns()
+    #= REPL[1]:6 =#
+    (var"#8#val", Main.Int(var"#9#t2" - var"#7#t1"))
+end
+
+```
+
+
+#### マクロ内の識別子の変換タイミング
+- `esc` 関数でエスケープされていれば, 識別子は変換されない
+- 代入, `local` 宣言, 関数引数のいずれかであれば, 新しいローカル変数が生成される
+- 上記のいずれにも当てはまらない場合, マクロを定義したモジュールのグローバル変数に変換される
+
+
+
+## 2.9 C 言語の呼び出し
