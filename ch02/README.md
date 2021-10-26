@@ -3970,3 +3970,619 @@ julia> p
 Point2D(1.0, 3.0)
 
 ```
+
+
+## 2.10 外部プログラムの呼び出し
+- コマンドの作成・実行
+- パイプライン処理
+
+
+### 2.10.1 コマンドの作成・実行
+- バッククォートで囲み, 関数に渡すことで実行される
+- `Cmd` 型オブジェクトを `run` 関数に渡すことで, 実行される
+- `run` 関数は, 実行したコマンドのプロセスを `Process` 型のオブジェクトとして返す
+
+
+```julia
+# コマンドオブジェクトの作成
+julia> `ls`
+`ls`
+
+# コマンドの実行
+julia> run(ans)
+README.md  README.md~  libinc.c  libinc.so  libpoint.c  libpoint.c~  libpoint.so  libsum.c  libsum.c~  libsum.so
+Process(`ls`, ProcessExited(0))
+```
+
+
+#### 標準出力の取得
+- `red` 関数を使う
+
+
+```julia
+# 標準出力を文字列として取得
+julia> read(`ls`, String)
+"README.md\nREADME.md~\nlibinc.c\nlibinc.so\nlibpoint.c\nlibpoint.c~\nlibpoint.so\nlibsum.c\nlibsum.c~\nlibsum.so\n"
+
+# 行ごとに処理
+julia> for line in eachline(`find . -type f`)
+           @show line
+       end
+line = "./libsum.c~"
+line = "./.libsum.c.un~"
+line = "./README.md"
+line = "./libinc.c"
+line = "./libpoint.so"
+line = "./.libinc.c.un~"
+line = "./libsum.c"
+line = "./libpoint.c"
+line = "./libsum.so"
+line = "./libpoint.c~"
+line = "./libinc.so"
+line = "./.README.md.un~"
+line = "./README.md~"
+line = "./.libpoint.c.un~"
+
+```
+
+
+#### 標準入力に書き込みを行う
+- `open` 関数を使う
+- コマンドはデフォルトで同期実行されるので, 長時間かかるコマンドでもその終了まで待つ
+- 呼び出したプロセスが正常に終了しなかった場合には例外が送出される
+
+
+```julia
+julia> open(`wc -l`, "w", stdout) do output
+           for _ in 1:10
+               println(output, "hi!")
+           end
+       end
+10
+
+julia> @time run(`sleep 10`)
+ 10.001107 seconds (42 allocations: 1.719 KiB)
+Process(`sleep 10`, ProcessExited(0))
+
+julia> run(`ls --optino-not-exist`)
+ls: unrecognized option '--optino-not-exist'
+Try 'ls --help' for more information.
+ERROR: failed process: Process(`ls --optino-not-exist`, ProcessExited(2)) [2]
+
+Stacktrace:
+ [1] pipeline_error
+   @ ./process.jl:525 [inlined]
+ [2] run(::Cmd; wait::Bool)
+   @ Base ./process.jl:440
+ [3] run(::Cmd)
+   @ Base ./process.jl:438
+ [4] top-level scope
+   @ REPL[9]:1
+
+```
+
+
+### 2.10.2 コマンド実行の注意点
+- Julia で実行したコマンドは, shell を経由しない
+- shell の機能は使えない
+- shell の機能が必要な場合には, 明示的にシェルを実行する
+
+
+```julia
+# bash の -c オプションでコマンドを実行する
+julia> run(`bash -c 'ls *.c'`)
+libinc.c  libpoint.c  libsum.c
+Process(`bash -c 'ls *.c'`, ProcessExited(0))
+
+julia> run(`bash -c 'find . -type f | wc -l'`)
+14
+Process(`bash -c 'find . -type f | wc -l'`, ProcessExited(0))
+
+```
+
+
+### 2.10.3 パイプライン処理
+- `pipeline` 関数を使うことで, shell の機能を使わずに, コマンドのパイプライン処理ができる
+- ３つ以上の引数を取ることもできる
+- 文字列を引数に渡した場合は, ファイルパスとして解釈される
+    - コマンドの左側にあると, コマンドへの入力
+    - 右側にあると, コマンドの出力を受け取ってファイルへ保存する
+
+
+```julia
+julia> run(`ls`)
+README.md  README.md~  libinc.c  libinc.so  libpoint.c  libpoint.c~  libpoint.so  libsum.c  libsum.c~  libsum.so
+Process(`ls`, ProcessExited(0))
+
+julia> pipeline(`cat libinc.c`, `wc -l`)
+pipeline(`cat libinc.c`, stdout=`wc -l`)
+
+julia> run(ans)
+4
+Base.ProcessChain(Base.Process[Process(`cat libinc.c`, ProcessExited(0)), Process(`wc -l`, ProcessExited(0))], Base.DevNull(), Base.DevNull(), Base.DevNull())
+
+```
+
+
+### 2.10.4 より発展的なコマンドの作成方法
+- 動的にコマンドを作成できる
+- 補間など
+- 配列を利用して, コマンド全体を作成できる
+
+
+```julia
+julia> msg = "hello"
+"hello"
+
+# 引数を補間
+julia> `echo $(msg)`
+`echo hello`
+
+julia> run(ans)
+hello
+Process(`echo hello`, ProcessExited(0))
+
+julia> cmd = "echo"
+"echo"
+
+# コマンドを補間
+julia> run(`$(cmd) hello`)
+hello
+Process(`echo hello`, ProcessExited(0))
+
+# 引数に渡す文字列が空白を含んでいても, １つの引数になる
+julia> `touch $("foo bar")`
+`touch 'foo bar'`
+
+# 複数の引数を, 配列で補間
+julia> `touch $(["foo", "bar"])`
+`touch foo bar`
+
+# 複数の引数を, タプルで補間
+julia> `touch $(("foo", "bar"))`
+`touch foo bar`
+
+```
+
+
+#### 環境変数やディレクトリの指定
+- `Cmd` 型のコンストラクタを利用する
+- 環境変数の設定
+    - `env` キーワード引数に環境変数を収めた辞書を渡す
+- 実行ディレクトリの設定
+    - `dir` キーワード引数にディレクトリへのパスを渡す
+
+
+```julia
+julia> run(`locale`)
+LANG=ja_JP.UTF-8
+LANGUAGE=en_US:en
+LC_CTYPE="ja_JP.UTF-8"
+LC_NUMERIC=en_GB.UTF-8
+LC_TIME=en_GB.UTF-8
+LC_COLLATE="ja_JP.UTF-8"
+LC_MONETARY=en_GB.UTF-8
+LC_MESSAGES="ja_JP.UTF-8"
+LC_PAPER=en_GB.UTF-8
+LC_NAME=en_GB.UTF-8
+LC_ADDRESS=en_GB.UTF-8
+LC_TELEPHONE=en_GB.UTF-8
+LC_MEASUREMENT=en_GB.UTF-8
+LC_IDENTIFICATION=en_GB.UTF-8
+LC_ALL=
+Process(`locale`, ProcessExited(0))
+
+julia> run(Cmd(`locale`, env = Dict("LANG" => "C")))
+LANG=C
+LANGUAGE=
+LC_CTYPE="C"
+LC_NUMERIC="C"
+LC_TIME="C"
+LC_COLLATE="C"
+LC_MONETARY="C"
+LC_MESSAGES="C"
+LC_PAPER="C"
+LC_NAME="C"
+LC_ADDRESS="C"
+LC_TELEPHONE="C"
+LC_MEASUREMENT="C"
+LC_IDENTIFICATION="C"
+LC_ALL=
+Process(setenv(`locale`,["LANG=C"]), ProcessExited(0))
+
+julia> run(`pwd`)
+/home/ysaito/projects/julia/Learn-Julia-Programming-from-Scratch-mokumoku/ch02
+Process(`pwd`, ProcessExited(0))
+
+julia> run(Cmd(`pwd`, dir="/usr/local/bin"))
+/usr/local/bin
+Process(setenv(`pwd`; dir="/usr/local/bin"), ProcessExited(0))
+
+```
+
+
+#### コマンドが存在するか
+- `Sys.which` 関数
+    - `which` と同じ使用方法
+
+
+```julia
+julia> Sys.which("ls")
+"/usr/bin/ls"
+
+julia> Sys.which("elixirc")
+
+julia> Sys.which("elixirc") === nothing
+true
+
+```
+
+
+## 2.11 パッケージ
+- Julia のパッケージは, 特定の構造を撮ったディレクトリ
+
+
+### 2.11.1 パッケージ管理の基本
+- `julia>` のプロンプト時に `]` キーを押す
+- `pkg> status` コマンド
+    - インストール済みの外部パッケージ一覧
+
+
+```julia
+# ] キーを押す
+julia> 
+
+# BS キーで戻る
+(@v1.6) pkg> 
+
+julia> 
+
+# インストール済みの外部パッケージ一覧
+(@v1.6) pkg> status
+      Status `~/.julia/environments/v1.6/Project.toml`
+  [8f4d0f93] Conda v1.5.2
+  [438e738f] PyCall v1.92.3
+  [d330b81b] PyPlot v2.10.0
+
+# Distributions パッケージのインストール
+(@v1.6) pkg> add Distributions
+    Updating registry at `~/.julia/registries/General`
+   Resolving package versions...
+   Installed PDMats ────────────── v0.11.1
+   Installed InverseFunctions ──── v0.1.1
+   Installed Rmath ─────────────── v0.7.0
+   Installed Rmath_jll ─────────── v0.3.0+0
+   Installed DataStructures ────── v0.18.10
+   Installed StatsFuns ─────────── v0.9.12
+   Installed SpecialFunctions ──── v1.8.1
+   Installed StatsAPI ──────────── v1.0.0
+   Installed DocStringExtensions ─ v0.8.6
+   Installed IrrationalConstants ─ v0.1.1
+   Installed DataAPI ───────────── v1.9.0
+   Installed QuadGK ────────────── v2.4.2
+   Installed LogExpFunctions ───── v0.3.4
+   Installed Distributions ─────── v0.25.21
+   Installed SortingAlgorithms ─── v1.0.1
+   Installed FillArrays ────────── v0.12.7
+   Installed OpenSpecFun_jll ───── v0.5.5+0
+   Installed Missings ──────────── v1.0.2
+   Installed Compat ────────────── v3.39.0
+   Installed Preferences ───────── v1.2.2
+   Installed JLLWrappers ───────── v1.3.0
+   Installed StatsBase ─────────── v0.33.12
+   Installed OrderedCollections ── v1.4.1
+   Installed ChainRulesCore ────── v1.11.0
+  Downloaded artifact: Rmath
+  Downloaded artifact: OpenSpecFun
+    Updating `~/.julia/environments/v1.6/Project.toml`
+  [31c24e10] + Distributions v0.25.21
+    Updating `~/.julia/environments/v1.6/Manifest.toml`
+  [d360d2e6] + ChainRulesCore v1.11.0
+  [34da2185] + Compat v3.39.0
+  [9a962f9c] + DataAPI v1.9.0
+  [864edb3b] + DataStructures v0.18.10
+  [31c24e10] + Distributions v0.25.21
+  [ffbed154] + DocStringExtensions v0.8.6
+  [1a297f60] + FillArrays v0.12.7
+  [3587e190] + InverseFunctions v0.1.1
+  [92d709cd] + IrrationalConstants v0.1.1
+  [692b3bcd] + JLLWrappers v1.3.0
+  [2ab3a3ac] + LogExpFunctions v0.3.4
+  [e1d29d7a] + Missings v1.0.2
+  [bac558e1] + OrderedCollections v1.4.1
+  [90014a1f] + PDMats v0.11.1
+  [21216c6a] + Preferences v1.2.2
+  [1fd47b50] + QuadGK v2.4.2
+  [79098fc4] + Rmath v0.7.0
+  [a2af1166] + SortingAlgorithms v1.0.1
+  [276daf66] + SpecialFunctions v1.8.1
+  [82ae8749] + StatsAPI v1.0.0
+  [2913bbd2] + StatsBase v0.33.12
+  [4c63d2b9] + StatsFuns v0.9.12
+  [efe28fd5] + OpenSpecFun_jll v0.5.5+0
+  [f50d1b31] + Rmath_jll v0.3.0+0
+  [0dad84c5] + ArgTools
+  [56f22d72] + Artifacts
+  [8bb1440f] + DelimitedFiles
+  [8ba89e20] + Distributed
+  [f43a241f] + Downloads
+  [b27032c2] + LibCURL
+  [76f85450] + LibGit2
+  [ca575930] + NetworkOptions
+  [44cfe95a] + Pkg
+  [3fa0cd96] + REPL
+  [ea8e919c] + SHA
+  [1a1011a3] + SharedArrays
+  [4607b0f0] + SuiteSparse
+  [fa267f1f] + TOML
+  [a4e569a6] + Tar
+  [cf7118a7] + UUIDs
+  [e66e0078] + CompilerSupportLibraries_jll
+  [deac9b47] + LibCURL_jll
+  [29816b5a] + LibSSH2_jll
+  [c8ffd9c3] + MbedTLS_jll
+  [14a3606d] + MozillaCACerts_jll
+  [05823500] + OpenLibm_jll
+  [83775a58] + Zlib_jll
+  [8e850ede] + nghttp2_jll
+  [3f19e933] + p7zip_jll
+Precompiling project...
+  29 dependencies successfully precompiled in 13 seconds (11 already precompiled, 1 skipped during auto due to previous errors)
+
+# パッケージのアップデート
+(@v1.6) pkg> update
+    Updating registry at `~/.julia/registries/General`
+   Installed VersionParsing ─ v1.2.1
+   Installed Parsers ──────── v2.1.0
+   Installed PyCall ───────── v1.92.5
+    Updating `~/.julia/environments/v1.6/Project.toml`
+  [438e738f] ↑ PyCall v1.92.3 ⇒ v1.92.5
+    Updating `~/.julia/environments/v1.6/Manifest.toml`
+  [69de0a69] ↑ Parsers v2.0.5 ⇒ v2.1.0
+  [438e738f] ↑ PyCall v1.92.3 ⇒ v1.92.5
+  [81def892] ↑ VersionParsing v1.2.0 ⇒ v1.2.1
+    Building PyCall → `~/.julia/scratchspaces/44cfe95a-1eb2-52ea-b672-e2afdf69b78f/4ba3651d33ef76e24fef6a598b63ffd1c5e1cd17/build.log`
+
+# 不要ファイルの削除
+(@v1.6) pkg> gc
+      Active manifest files: 1 found
+      Active artifact files: 2 found
+      Active scratchspaces: 3 found
+     Deleted no artifacts, repos, packages or scratchspaces
+
+```
+
+
+### 2.11.2 プロジェクトのパッケージ管理
+- `Project.toml`
+    - 現在のプロジェクトが依存しているパッケージを管理する
+- `Manifest.toml`
+    - 使われているパッケージの正確なバージョンやインストール場所を管理する
+    - git 管理に含めない
+
+
+```shell
+# プロジェクト用のディレクトリを作る
+$ mkdir ./pkgExample
+$ cd $_
+```
+
+
+```toml
+# プロジェクト用の toml ファイルを作る
+# Project.toml
+name = "pkgExample"
+```
+
+
+```julia
+# Pkg モードで activate する
+(@v1.6) pkg> activate .
+  Activating environment at `~/projects/julia/Learn-Julia-Programming-from-Scratch-mokumoku/ch02/pkgExample/Project.toml`
+
+# 最初はパッケージはない
+(pkgExample) pkg> status
+      Status `~/projects/julia/Learn-Julia-Programming-from-Scratch-mokumoku/ch02/pkgExample/Project.toml` (empty project)
+
+# パッケージを追加する
+(pkgExample) pkg> add Distributions
+    Updating registry at `~/.julia/registries/General`
+   Resolving package versions...
+    Updating `~/projects/julia/Learn-Julia-Programming-from-Scratch-mokumoku/ch02/pkgExample/Project.toml`
+  [31c24e10] + Distributions v0.25.21
+    Updating `~/projects/julia/Learn-Julia-Programming-from-Scratch-mokumoku/ch02/pkgExample/Manifest.toml`
+  [d360d2e6] + ChainRulesCore v1.11.0
+  [34da2185] + Compat v3.39.0
+  [9a962f9c] + DataAPI v1.9.0
+  [864edb3b] + DataStructures v0.18.10
+  [31c24e10] + Distributions v0.25.21
+  [ffbed154] + DocStringExtensions v0.8.6
+  [1a297f60] + FillArrays v0.12.7
+  [3587e190] + InverseFunctions v0.1.1
+  [92d709cd] + IrrationalConstants v0.1.1
+  [692b3bcd] + JLLWrappers v1.3.0
+  [2ab3a3ac] + LogExpFunctions v0.3.4
+  [e1d29d7a] + Missings v1.0.2
+  [bac558e1] + OrderedCollections v1.4.1
+  [90014a1f] + PDMats v0.11.1
+  [21216c6a] + Preferences v1.2.2
+  [1fd47b50] + QuadGK v2.4.2
+  [189a3867] + Reexport v1.2.2
+  [79098fc4] + Rmath v0.7.0
+  [a2af1166] + SortingAlgorithms v1.0.1
+  [276daf66] + SpecialFunctions v1.8.1
+  [82ae8749] + StatsAPI v1.0.0
+  [2913bbd2] + StatsBase v0.33.12
+  [4c63d2b9] + StatsFuns v0.9.12
+  [efe28fd5] + OpenSpecFun_jll v0.5.5+0
+  [f50d1b31] + Rmath_jll v0.3.0+0
+  [0dad84c5] + ArgTools
+  [56f22d72] + Artifacts
+  [2a0f44e3] + Base64
+  [ade2ca70] + Dates
+  [8bb1440f] + DelimitedFiles
+  [8ba89e20] + Distributed
+  [f43a241f] + Downloads
+  [b77e0a4c] + InteractiveUtils
+  [b27032c2] + LibCURL
+  [76f85450] + LibGit2
+  [8f399da3] + Libdl
+  [37e2e46d] + LinearAlgebra
+  [56ddb016] + Logging
+  [d6f4376e] + Markdown
+  [a63ad114] + Mmap
+  [ca575930] + NetworkOptions
+  [44cfe95a] + Pkg
+  [de0858da] + Printf
+  [3fa0cd96] + REPL
+  [9a3f8284] + Random
+  [ea8e919c] + SHA
+  [9e88b42a] + Serialization
+  [1a1011a3] + SharedArrays
+  [6462fe0b] + Sockets
+  [2f01184e] + SparseArrays
+  [10745b16] + Statistics
+  [4607b0f0] + SuiteSparse
+  [fa267f1f] + TOML
+  [a4e569a6] + Tar
+  [8dfed614] + Test
+  [cf7118a7] + UUIDs
+  [4ec0a83e] + Unicode
+  [e66e0078] + CompilerSupportLibraries_jll
+  [deac9b47] + LibCURL_jll
+  [29816b5a] + LibSSH2_jll
+  [c8ffd9c3] + MbedTLS_jll
+  [14a3606d] + MozillaCACerts_jll
+  [05823500] + OpenLibm_jll
+  [83775a58] + Zlib_jll
+  [8e850ede] + nghttp2_jll
+  [3f19e933] + p7zip_jll
+
+# 追加したパッケージが表示される
+(pkgExample) pkg> status
+      Status `~/projects/julia/Learn-Julia-Programming-from-Scratch-mokumoku/ch02/pkgExample/Project.toml`
+  [31c24e10] Distributions v0.25.21
+
+# Project.toml の内容
+julia> run(pipeline(`cat Project.toml`))
+name = "pkgExample"
+
+[deps]
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Process(`cat Project.toml`, ProcessExited(0))
+
+```
+
+
+### 2.11.3 プロジェクトの有効化
+- `activate .` は REPL のみ可能
+- `foo.jl` などのファイルでは, Julia コマンドに渡すときに `--project=@.` オプションを指定すると現在のディレクトリのプロジェクトを有効化する
+- `--project` のみ記載しても同じ効果
+- `JULIA_PROJECT` 環境変数に `@.` を指定しても同じ効果
+
+```julia
+# pkgExample2.jl
+using Distributions
+println("OK")
+```
+
+```shell
+$ julia --project=@. pkgExample2.jl
+OK
+
+```
+
+
+### 2.11.4 パッケージの作成
+- Julia のパッケージは, 特定のディレクトリ構造を取る
+
+
+```shell
+./pkgExample/
+├── LICENSE
+├── Manifest.toml
+├── Project.toml
+├── README.md
+├── docs
+├── src
+└── test
+
+3 directories, 4 files
+```
+
+
+#### パッケージの作成
+
+
+```julia
+# パッケージのスケルトンを作成
+(@v1.6) pkg> generate PkgExample2
+  Generating  project PkgExample2:
+    PkgExample2/Project.toml
+    PkgExample2/src/PkgExample2.jl
+
+# Project.toml の中身
+julia> run(pipeline(`cat PkgExample2/Project.toml`))
+name = "PkgExample2"
+uuid = "229381da-56aa-44ad-aef9-07135bf10050"
+authors = ["Yusuke Saito <ysaito8015@gmail.com>"]
+version = "0.1.0"
+Process(`cat PkgExample2/Project.toml`, ProcessExited(0))
+
+# src/PkgExample.jl の中身
+julia> run(pipeline(`cat PkgExample2/src/PkgExample2.jl`))
+module PkgExample2
+
+greet() = print("Hello World!")
+
+end # module
+Process(`cat PkgExample2/src/PkgExample2.jl`, ProcessExited(0))
+
+# 生成したパッケージを利用する
+julia> using PkgExample2
+[ Info: Precompiling PkgExample2 [229381da-56aa-44ad-aef9-07135bf10050]
+
+julia> PkgExample2.greet()
+Hello World!
+```
+
+
+#### 生成したパッケージに変更を加える
+
+```julia
+# Primes パッケージの追加
+(PkgExample2) pkg> add Primes
+    Updating registry at `~/.julia/registries/General`
+   Resolving package versions...
+   Installed Primes ─ v0.5.0
+    Updating `~/projects/julia/Learn-Julia-Programming-from-Scratch-mokumoku/ch02/PkgExample2/Project.toml`
+  [27ebfcd6] + Primes v0.5.0
+    Updating `~/projects/julia/Learn-Julia-Programming-from-Scratch-mokumoku/ch02/PkgExample2/Manifest.toml`
+  [27ebfcd6] + Primes v0.5.0
+Precompiling project...
+  ✓ PkgExample2
+  2 dependencies successfully precompiled in 2 seconds
+  1 dependency precompiled but a different version is currently loaded. Restart julia to access the new version
+
+```
+
+
+```julia
+# greet() 関数の変更
+module PkgExample2
+
+using Primes
+greet() = print("Hello! Today's lucky prime number is $(rand(primes(100))).")
+
+end # module
+```
+
+
+```julia
+# 実行
+julia> using PkgExample2
+[ Info: Precompiling PkgExample2 [229381da-56aa-44ad-aef9-07135bf10050]
+
+julia> PkgExample2.greet()
+Hello! Today's lucky prime number is 73.
+```
