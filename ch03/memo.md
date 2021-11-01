@@ -1,3 +1,5 @@
+# amd64
+
 ```julia
 julia> ENV["PYTHON"]
 "/home/ysaito/.pyenv/versions/anaconda3-2021.05/bin/python3.8"
@@ -67,7 +69,8 @@ Precompiling project...
   6 dependencies successfully precompiled in 21 seconds (6 already precompiled)
 ```
 
------------------------------------------------------------
+
+# Raspberry Pi OS 32bit
 
 ```julia
 julia> ENV["PYTHON"]
